@@ -1,0 +1,10 @@
+# 백테스트 결과 repo — md 만 push.
+# 큰 csv / 로그는 제외 (LFS 미사용, 1GB 한도 회피).
+
+*.csv
+*.log
+*.pkl
+*.bak
+*.tmp
+.DS_Store
+__pycache__/
