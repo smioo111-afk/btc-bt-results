@@ -2086,6 +2086,45 @@ E2 BEAR 차단(F2: 일봉 종가 < EMA200)이 회복기 진입 기회 제약 가
 
 ---
 
+## 2026-04-25 #65-R: E100 trade-level 재분석 — 🟡 RE-EVAL (RED → 관찰 보류)
+
+### 배경
+
+#65 RED 판정에서 E100의 "2022-11-06 OFF 후 30d -23.32%" 는 buy-and-hold 가정. 실제 매도 로직 발동 시 trade 단위 PnL 재측정으로 false positive 위험 과장 가능성 검증.
+
+### 핵심 발견 (B0 회귀 통과: 27,542,773)
+
+| 분석 | 결과 |
+|---|---|
+| A. LUNA 윈도우 E100-only trade | 1건, **+5.64%** (buy-hold -23.32% → 위험 과장 실증) |
+| Portfolio-level (final equity) | E100 28,558,773 vs B0 27,542,773 = **+3.69% (+1.0M KRW)** |
+| Trade 분류 | 공통 55, B0-only 13, E100-only 8 |
+| Segment Δ | 2022 +4.56%p / 2023 +2.63%p / 2024 -1.06%p / 2025 -3.40%p |
+| GO 미달 폭 | 2023 +2.63%p vs 기준 +3.0%p = **0.37%p** 차이 |
+| 2022 BEAR 전체 | E100-only 1건 +2.92%, B0-only 4건 -10.38% |
+
+### 결정적 통찰
+
+- **Trade-level naive sum 한계**: per-trade PnL%는 그 시점 사이즈 기준이라 복리/피라미딩 무시. naive 합산이 음수여도 portfolio-level final equity는 양수일 수 있음.
+- **회복기 진입 시점**: E100 첫 진입 2023-01-17 vs B0 2023-01-05 → E100이 **12일 늦음**. EMA 단축으로 차단은 빨리 풀렸지만 score/AI 게이트가 진입 지연. EMA200이 회복기 지연의 주된 원인 아님.
+- **잔여 우려 (2025 재하락 -3.40%p)**: E100 ON 시작이 B0보다 2개월 빠름에도 손실 확대 → 단순 "빠른 ON"이 보호 효과 없음.
+- **A 결론**: false positive 위험은 매도 로직(ATR/계단/AI Sell)이 흡수. buy-hold 가정 기반 #65 기각 사유 1건 무효화.
+
+### 재판정
+
+🟡 **RE-EVAL** — #65 영구 기각 → 관찰 보류 (E100만)
+
+- E150/E120: 영구 기각 유지 (CAGR/2023 모두 미달)
+- **E100**: 영구 기각 → **관찰 보류 강등** (5월 중순 Shadow AI 평가 시 #64 B3 와 동시 결정)
+
+### 산출
+
+- `bt_65_R_e100_reanalysis_verdict.md` / `_key_numbers.md` / `_full.md`
+- `bt_65_R_e100_trades.csv` (E100-only 8 + B0-only 13 trade 상세)
+- `scripts/bt_65_R_e100_reanalysis.py`
+
+---
+
 ## 아카이브 참조
 
 초기 탐색 (#1~#19), 외부 데이터 시도 (#16~#19), 기각된 TU 조합 등:
