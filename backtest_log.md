@@ -2125,6 +2125,56 @@ E2 BEAR 차단(F2: 일봉 종가 < EMA200)이 회복기 진입 기회 제약 가
 
 ---
 
+## 2026-05-01 #69: simulator v20.9.4 FULL 정합 검증 (Reference vs F10+bars1080) — 🔴 FAIL (±0.5% 미달)
+
+### 배경
+
+v20.9 정합 작업(simulator.py 에 F5/F10 + bars_since_e2 추가) 이후 한 번도 끝까지 돌리지 못한 FULL 비교를 #68 후속으로 실행. `bt_v20_9_validation.py` 가 scaffold + 단위 테스트 상태였던 것을 `backtest/scripts/bt_e2_longterm_52mo.py` 의 데이터/모델 파이프라인을 import 해 두 케이스를 동일 데이터로 병렬 실행하도록 완성.
+
+### 케이스
+
+| 케이스 | block_mode | F5 | days/bars | 의미 |
+|---|---|---|---|---|
+| Reference | F2 | OFF | days 180 | bt_e2_longterm_52mo `E2b+6mo` 와 동일 (외부 F10 OR + 일 단위 카운터) |
+| Simulator v20.9.4 | F10 | ON | bars 1080 | 프로덕션 정합 (4H봉 카운터, simulator 내부 F5 OR) |
+
+기간 2022-01-01 ~ 2026-04-19 (52.3mo, 9413봉 4H), AI Gate OFF, 동일 model/data/지표.
+
+### 결과
+
+| 케이스 | 최종자산 | 거래 | MDD | CAGR | Sharpe | BULLcap | 예외진입 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Reference (E2b+6mo, days 180) | 27,542,773 | 68 | 20.81% | +26.60% | 1.48 | 93.2% | 16건 |
+| Simulator v20.9.4 (F10, bars 1080) | 26,626,794 | 65 | 20.81% | +25.61% | 1.44 | 90.1% | 13건 |
+| **Δ** | **-3.326%** | -3 | 0.00%p | -0.99%p | -0.04 | -3.1%p | -3건 |
+
+**판정 (±0.5%)**: 🔴 **FAIL** — Δ -3.326% 가 허용 오차 6.6배 초과.
+
+### 의미
+
+- 거래수 -3 + 예외 -3 → F10(=F2 OR F5) 또는 simulator 내부 F5 재계산 경로가 reference 보다 **일부 진입을 추가 차단**.
+- MDD 동일 (20.81%) 인데 final equity -3.3% → 차단된 3건 모두 평균 +수익 트레이드.
+- BULLcap -3.1%p 가 진입 누락 패턴과 일치 — BULL 구간 일부 진입이 F5 OR 로 막힘.
+- bars 1080 (= 180일 × 6봉/일) 단위 변환 vs days 180 정합 여부도 분리 필요.
+
+### 후속 액션
+
+1. **봇 재시작 보류** — 트레이딩 로직 변경은 #68 (월간 리포트) 한정이라 재시작 자체는 안전하나, 시뮬 정합 FAIL 상태에서 v20.9.4 simulator 의 백테스트 결과를 의사결정 근거로 쓰면 안 됨. 사용자 별도 지시 시 진행.
+2. **divergence 원인 분리** (별도 #번호):
+   - 케이스 A: F2 + days 180 (Reference)
+   - 케이스 B: F2 + bars 1080 — 일↔봉 단위 변환만 단독 검증
+   - 케이스 C: F10 + bars 1080 (현재 FAIL)
+   - A vs B 가 ±0.5% 면 단위 변환 OK → F5 ON 이 원인. 아니면 `precompute_bars_since_e2` 와 `precompute_days_since_e2` 의 boundary 차이.
+3. **rejected_experiments.md 등록 보류** — 기각 아닌 정합 결함이므로 관찰/수정 항목 (`improvement_todo.md`).
+
+### 산출
+
+- `backtest/bt_v20_9_validation.py`: scaffold + FULL 검증 로직 (`_run_full_validation` + 결과 비교 + MD 저장)
+- `backtest/results/bt_v20_9_validation.md` (이번 세션 결과)
+- `backtest/scripts/bt_e2_longterm_52mo.py`: 변경 없음 (데이터/모델 파이프라인 재사용만)
+
+---
+
 ## 아카이브 참조
 
 초기 탐색 (#1~#19), 외부 데이터 시도 (#16~#19), 기각된 TU 조합 등:
