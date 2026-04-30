@@ -2243,6 +2243,74 @@ caller 가 `mod` 딕셔너리에 `bars_since_e2_a` 를 안 넣으면 `mod.get()`
 
 ---
 
+## 2026-05-01 #69-B Phase 1: silent block fix 후 #42 baseline 재검증 — 🟢 영향 미미 (Δ 0.000%)
+
+### 배경
+
+#69-A 에서 `bt_e2_longterm_52mo.py:run_case` 의 `mod["bars_since_e2_a"]` 누락 + simulator 의 silent block 영구 수정. silent block fix 가 영향 줄 수 있는 범위 — bars 모드(`e2_require_bars_since_e2 > 0`)를 사용하는 백테스트들의 결과가 변경 가능.
+
+### Phase 1: #42 (E2b+6mo, bt_e2_longterm_52mo) 재실행
+
+| 케이스 | 최종자산 (이전) | 최종자산 (fix 후) | Δ |
+|---|---:|---:|---:|
+| E2a              | 26,706,444 | 26,706,444 | +0.000% |
+| E2b              | 26,626,794 | 26,626,794 | +0.000% |
+| **E2b+6mo (1순위)** | **27,542,773** | **27,542,773** | **+0.000%** |
+| Dynamic          | 21,374,142 | 21,374,142 | +0.000% |
+| E2-OFF           | 24,043,973 | 24,043,973 | +0.000% |
+
+작성일/소요시간 외 모든 수치 완전 일치 (md diff 2 lines: 작성일 timestamp + "총 소요" 0.1s 차이만).
+
+### 영향 범위 분석 (영향 받았을 후보 스크립트 점검)
+
+bars 모드 사용 스크립트 18개 점검 — 각각 자체 `mod` dict 빌드 시 `bars_since_e2_a` 를 직접 넣고 있어 silent block 영향 **없음**:
+
+| 스크립트 | bars_set | bars_mod | 영향 |
+|---|:-:|:-:|---|
+| bt_64_range_weight.py | ✓ | ✓ | 없음 |
+| bt_65_ema_period.py | ✓ | ✓ | 없음 |
+| bt_66_e100_b3_combo.py | ✓ | ✓ | 없음 |
+| bt_63b_bar_pos.py | ✓ | ✓ | 없음 |
+| bt_r2_r3_grid.py | ✓ | ✓ | 없음 |
+| bt_rolling_ai_pf.py | ✓ | ✓ | 없음 |
+| bt_real_pf_penalty_impact.py | ✓ | ✓ | 없음 |
+| bt_check_ai_gate_threshold.py | ✓ | ✓ | 없음 |
+| bt_e2_f7_f11_ablation.py | ✓ | ✓ | 없음 |
+| bt_e2_block_mode_ablation.py | ✓ | ✓ | 없음 |
+| bt_recovery_capture.py | ✓ | ✓ | 없음 |
+| bt_recovery_regime.py | ✓ | ✓ | 없음 |
+| bt_range_exit_enhance.py | ✓ | ✓ | 없음 |
+| bt_strong_trend_split.py | ✓ | ✓ | 없음 |
+| bt_v21_core_bull.py | ✓ | ✓ | 없음 |
+| analyze_f7a_deep.py | ✓ | ✓ | 없음 |
+| analyze_2023_recovery_exits.py | ✓ | ✓ | 없음 |
+| **bt_v20_9_validation.py** | ✓ | **✗** | **있었음** (#69-A 에서 fix + PASS 검증) |
+
+### 판정
+
+- **#42 baseline Δ = 0.000% (< 0.5% 임계)** → 🟢 영향 미미
+- silent block 버그의 실제 영향 범위는 **`bt_v20_9_validation.py` 단독** — 그 외 #62~#66 등 모든 후속 백테스트는 자체 mod 에 `bars_since_e2_a` 를 정상 전달했으므로 영향 없음.
+- **Phase 2 (#62~#66 재실행) 보류** — silent block 은 이론적으로 모든 bars 모드 백테스트를 위협했지만, 실제 코드는 각 스크립트가 mod 를 직접 빌드해 영향이 한정됐음.
+
+### 의미
+
+- #65 E100 회복기 +2.63%p 미달 결론 — 그대로 유효 (영향 없음)
+- #64 B3 / #66 C1 보류 결정 — 그대로 유효
+- #62 / #63 기각 결론 — 그대로 유효
+- 결정 변경 case 0건 → improvement_todo.md / rejected_experiments.md 업데이트 불필요
+
+### 산출
+
+- `bt_e2_longterm_52mo.md` 재생성 (수치 동일, 작성일만 갱신)
+- `e2_longterm_lead_entries.csv` 재생성 (72건 동일)
+- 영향 범위 점검 grep 결과 (위 표)
+
+### 학습된 교훈
+
+silent block 같은 무음 결함은 caller 마다 mod dict 를 손으로 빌드하는 패턴에서 발생. 이번 fix 의 defensive `raise ValueError` (simulator.py) 가 향후 같은 패턴 재발을 즉시 차단. 추가로 `mod` 에 들어가야 하는 array 들을 헬퍼 함수(`build_e2_mod(bear_arr)`)로 묶어 caller 의존성 줄이는 후속 정리 권장.
+
+---
+
 ## 아카이브 참조
 
 초기 탐색 (#1~#19), 외부 데이터 시도 (#16~#19), 기각된 TU 조합 등:
