@@ -2434,6 +2434,63 @@ V1: 회복기 +8.36%p (2022+2023) ↔ BULL/재하락 -8.13%p (2024+2025) → 거
 
 ---
 
+## 2026-05-02 #72: 3-phase stepped entry (52mo, 5 cases) — 🔴 RED (모든 W case FAIL)
+
+**스크립트**: `backtest/scripts/bt_72_stepped_entry.py` (Phase 1: B0+W7 / Phase 2: W1~W3 ratio sweep)
+
+### 목적
+#71 V1 의 BULL/재하락 손실 (-8.13%p) 을 사이즈 축소 + EMA250 풀모드 전환으로 해결 시도.
+- WAIT (close < EMA100) → bear_block, no entry
+- EARLY (EMA100 ≤ close < EMA250) → Leading path, 30~50% size, P0 단일
+- FULL (close ≥ EMA250) → 정상 풀모드 (regime / pyramiding)
+
+### 케이스 (F5 OFF, baseline = #70 E250, AI_OFF)
+B0 (250/250) / W1 (30%) / W2 (40%) / W3 (50%) / W7 (30%, single)
+
+### 결과 (52mo)
+
+| ID | Entry/Hold | EARLY% | 최종자산 | ΔCAGR | Δ2022 | Δ2023 | Δ2024 | Δ2025 | EARLY 평균 PnL | E→F% | 판정 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|:---:|
+| B0 | 250/250 | - | 28,615,598 | - | - | - | - | - | - | - | base |
+| W1 | 100/250 | 30 | 28,454,854 | -0.17 | +6.06 | -0.95 | -0.90 | -6.86 | +2.14% | 57 | 🔴 |
+| W2 | 100/250 | 40 | 28,633,126 | +0.02 | +6.06 | +0.36 | -0.90 | -7.38 | +2.14% | 57 | 🔴 |
+| W3 | 100/250 | 50 | 28,809,744 | +0.20 | +6.06 | +1.67 | -0.90 | -7.90 | +2.14% | 57 | 🔴 |
+| W7 | 100/250 | 30 | 28,454,854 | -0.17 | +6.06 | -0.95 | -0.90 | -6.86 | +2.14% | 57 | 🔴 |
+
+GO 기준 (AND 6: ① CAGR≥+0.3 ② MDD≤+1.0 ③ 2023≥+2.0 ④ 2024≥-1.0 ⑤ 2025≥-1.0 ⑥ EARLY>-1.5%): 모든 W case 4/6 통과 → FAIL.
+
+### 핵심 관찰
+
+1. **EARLY trade 자체는 안전 (+2.14% 평균, ratio 무관)** — 6건 모두 동일 entry pool, size 만 변경.
+2. **EARLY → FULL 성공률 57%** (7건 중 4건 FULL 도달, 3건 WAIT 회귀).
+3. **Phase 통계 동일**: W1~W7 모두 WAIT 670일 / EARLY 45일 / FULL 970일 / W→E 7회 / E→F 4회. ratio 만 다름.
+4. **선형 트레이드오프 확인**: ratio 30→50% 키울수록 회복 +0.7%p / 2025 -1.0%p. **2023≥+2.0 AND 2025≥-1.0 동시 통과 불가능**.
+5. **2025 -7%p 손실은 EARLY phase 와 무관** — FULL phase 39건 진입이 BULL 막바지/재하락 초입에 들어가 자체 stop hit. EMA100 기반 빠른 차단해제 → FULL 진입 timing 어긋남.
+6. **Simulator native 한계**: EARLY phase 내 step-pyramiding hook 없음 → W1~W6 의 진짜 단계 추가매수 효과 검증 불가. 단 ratio sweep 결과 (linear) 로 보아 step pyramiding 도 본질 문제 (FULL 잘못 진입) 해결 못 할 것으로 추정.
+
+### 판정
+
+- **🔴 모든 W case FAIL** — Phase 2 ratio sweep 추가 가치 없음 확정.
+- **State machine 접근 자체 한계**: 단순 Hybrid (#71) 와 단계별 진입 (#72) 모두 FAIL.
+- **공통 원인**: EMA100 빠른 차단해제 → BULL 막바지/재하락 초입에 풀 진입 → 자체 stop hit → 손실 누적.
+- **rejected_experiments.md 등록 권고**: Hybrid (#71) + Stepped (#72) state machine 변형 영구 기각.
+
+### 다음 단계
+
+1. **#73 (가칭) — F10 + EMA250 production 정합 검증**: F5 ON 복귀 + EMA200→250 단일 변경 검증.
+   - 통과 시 v20.9.5 후보 (E2_DAILY_EMA_PERIOD: 200 → 250)
+   - F5 ⊆ F2 결론 (#70) overfit 위험 점검
+2. **회복기 개선 다른 축**: state machine 외 — 외부 신호 / AI Gate 회복 감지 / 진입 사이즈 동적 조정.
+3. **Step pyramiding simulator 패치**: 보류 (본질 문제 미해결 예상).
+
+### 산출
+
+- `bt_72_stepped_entry_verdict.md` / `_key_numbers.md` / `_full.md`
+- `bt_72_stepped_entry.csv` / `bt_72_phase_transitions.csv`
+- 총 실행시간: Phase 1 3.3s + Phase 2 6.3s
+
+---
+
 ## 아카이브 참조
 
 초기 탐색 (#1~#19), 외부 데이터 시도 (#16~#19), 기각된 TU 조합 등:
