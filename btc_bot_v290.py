@@ -4411,6 +4411,22 @@ class BitcoinBot:
                                             _score_lines += "\n"
                                         _entry_path_label = ("⚡ 선행신호 진입(유동성흡수)"
                                                              if _via_leading else "EMA 정배열 진입")
+                                        # #76: entry_type별 TP 라벨 분기
+                                        if _entry_mode == "pyramid":
+                                            if _e2_exception:
+                                                _tp_lines = (
+                                                    f"⚠️ TP1:{tp1p:,.0f} (피라미딩 차단 — Step만 갱신)\n"
+                                                    f"⚠️ TP2:{tp2p:,.0f} (피라미딩 차단)")
+                                            else:
+                                                _tp_lines = (
+                                                    f"📈 추매1:{tp1p:,.0f} (TP1 도달 시)\n"
+                                                    f"📈 추매2:{tp2p:,.0f} (TP2 도달 시)")
+                                        elif _entry_mode == "breakeven":
+                                            _tp_lines = f"💛 BE익절:{tp1p:,.0f} (25%매도+본전이동)"
+                                        else:  # trend / mean_reversion
+                                            _tp_lines = (
+                                                f"💛 익절1:{tp1p:,.0f} (부분매도)\n"
+                                                f"💚 익절2:{tp2p:,.0f} (부분매도)")
                                         tg_info(
                                             f"✅ *매수 체결* (v{BOT_VERSION})\n"
                                             f"🕐 {fmt_kst()}\n"
@@ -4428,8 +4444,7 @@ class BitcoinBot:
                                             f"📋 모드:{_entry_mode}"
                                             f"{' (40% 안전장치)' if _via_leading else ''}\n"
                                             f"🛡️ 손절:{a_stop:,.0f}\n"
-                                            f"💛 익절1:{tp1p:,.0f}\n"
-                                            f"💚 익절2:{tp2p:,.0f}")
+                                            f"{_tp_lines}")
                                     else:
                                         try:
                                             self.upbit.cancel_order(order_uuid)
