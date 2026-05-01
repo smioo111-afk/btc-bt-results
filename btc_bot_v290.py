@@ -1,166 +1,14 @@
 """
-BTC AI Trading Bot v19.0
+BTC AI Trading Bot v20.9.10
 5단계 진입 파이프라인:
-  [1] AI Gate       — XGBoost(방향성)
-  [2] Rule Score    — 진입 품질 (가중치 합산) + OBV Score 보너스
-  [3] 리스크 필터   — 쿨다운 / Daily Loss / Kill Switch / MDD / VWAP / OBV DIV
-  [4] 포지션 사이징 — Regime별 차등 (P5 전략)
-  [5] ATR 기반 익절/손절 + Regime별 청산 전략
+  [1] AI Gate    — XGBoost (방향성)
+  [2] Rule Score — 가중치 합산 (EMA / ATR / Volume / Breakout / 1D / RR / OBV)
+  [3] 리스크     — 쿨다운 / Daily Loss / Kill Switch / MDD / VWAP / OBV DIV
+  [4] 사이징     — Regime별 차등 (Trend_Up 피라미딩 / Range new / Volatile·TD 보수)
+  [5] 청산       — ATR 손절 + 무한 계단 TP + TU 트레일링 + 자동 알림 (#75-B)
 
-v20.7 → v20.8 변경 (Kill Switch 자동복구 + 24h 재발동 방지):
-  - [KR1] Kill Switch 자동복구 로직
-    · 조건 (AND): status["kill_switch"]=True AND current_mdd < 0.10 AND 발동 후 24h 경과
-    · 동작: status["kill_switch"]=False 자동 해제, 텔레그램 INFO 알림
-    · 근거: v20.7 진실 평가에서 v20.6 현실 대비 +5.39M 개선 (18.06M vs 12.67M)
-  - [KR2] 24h 내 재발동 영구 중단 안전장치
-    · 자동복구 후 24h 내 다시 Kill Switch 발동 시 killswitch_count_24h += 1
-    · count_24h >= 2 시 자동복구 비활성 (영구 중단, 수동 개입 필요)
-    · 텔레그램 tg_error 경고
-    · 목적: 시스템 결함 시 무한 루프 방지
-  - [KR3] 발동/해제 이력 추적 필드 신규
-    · last_killswitch_at: 마지막 발동 시각 (epoch)
-    · last_killswitch_recovered_at: 마지막 자동복구 시각
-    · killswitch_count_24h: 최근 24h 발동 횟수
-  - [U1] 텔레그램 명령 확장
-    · /killswitch status: 현재 상태 + 이력 조회
-    · /killswitch reset: 24h 카운터 초기화 (비상 재시작용)
-    · /killswitch off: 수동 해제 (기존 유지)
-  - [S1] 시뮬레이터 24h 재발동 방지 동기화
-    · backtest/core/simulator.py auto_recover 모드에 24h guard 추가
-
-v20.6 → v20.7 변경 (C6 채택 — Range step + 사이징 + Kill Switch 상향):
-  - [C6] Range 전용 step_lookback = 3.0 (기존 전역 STEP_LOOKBACK=1.5)
-    · TU는 TU_STEP_LOOKBACK=2.5 유지 (v20.6 BD)
-    · Range는 RANGE_STEP_LOOKBACK=3.0 신규
-    · 계단손절 stop = first_entry + (new_lv - 3.0) * interval → 여유 확대
-    · pos_step_lookback 재활용 (진입 시 Range=3.0, TU=2.5, 기타=0)
-  - [C6] Range 초기 사이징 70% (기존 80%)
-    · RANGE_INITIAL_RATIO=0.70 신규 상수
-    · TU 진입은 PYRAMID_INITIAL_RATIO=0.80 유지
-    · Range 진입만 70%로 축소 → 깊은 피라미딩 시 MDD 억제
-  - [K1] MDD Kill Switch 15% → 20%
-    · MDD_STOP_PCT 0.15 → 0.20
-    · 백테스트 C6 OOS MDD 20.92% 기반 — 기존 15% 한도 달성 불가 확인
-    · PF 기반 Kill Switch (KILL_SWITCH_PF=0.7)는 변경 없음
-  - [C6] 백테스트 결과:
-    · 최종자산 23.97M (B0 v20.6 19.55M 대비 +44.24%p)
-    · OOS MDD 20.92% (B0 26.10% 대비 -5.18%p)
-    · BULL 피크 캡처 83.57% (B0 68.26% 대비 +15.31%p)
-    · BEAR 수익 +10.97% (B0 +3.89% 대비 +7.08%p)
-    · 거래 30건, Range 계단 9, 큰손실 12
-
-v20.5 → v20.6 변경 (BD + E2 + 하드스톱 팬텀 가드 + 텔레그램 정기만):
-  - [BD] TU 트레일링/계단 완화 (per-position 파라미터 인프라 도입)
-    · TU_ATR_TRAILING_MULT = 4.5 (기존 ATR_TRAILING_MULT 3.5)
-    · TU_STEP_LOOKBACK     = 2.5 (기존 STEP_LOOKBACK 1.5)
-    · status["pos_trail_m"], status["pos_step_lookback"] 필드 추가
-    · Range New(R3)는 변경 없음 (Range 진입은 기본 상수 유지)
-    · 백테스트 R3+BD+E2 채택 (cont_eq 16,005K, OOS MDD 11.32%)
-  - [E2] 일봉 EMA200 기반 BEAR 모드 — 신규 진입 전면 OFF
-    · 일봉 종가 < 일봉 EMA200 → BEAR 모드
-    · 전일까지 완료된 일봉 데이터 사용 (look-ahead 방지)
-    · 보유 포지션 영향 없음, 신규 진입만 차단
-    · BEAR 모드 진입/해제 시 텔레그램 INFO
-  - [H1] 하드스톱 팬텀 감지 버그 수정
-    · _sync_balance에서 _check_phantom_position 호출 시 _partial_selling 가드 추가
-    · 하드스톱 매도 중 status.entry 조기 0화 방지
-    · sell_type 판정에 entry<=0 fallback 추가 (raw 계산 신뢰 X 시 stop_loss 기반 추정)
-  - [H2] log_confirmed_trade 페어링 복원 확인 및 보강
-  - [U1] 텔레그램 이벤트 리포트 4종 제거 (정기 리포트 6회/일만 유지)
-    · 매매 체결 알림(BUY/SELL/PYRAMID/REINVEST/SELL_PARTIAL) 유지
-    · 시스템 알림(Kill Switch, AI 재학습, API 장애 등) 유지
-  - [S1] 시뮬레이터 legacy P2 Range New 제외 누락 수정 (시뮬 품질)
-
-v20.3 → v20.5 변경 (Range New 전략 + 로그 보강):
-  - [R1] Range New 전략 도입 (백테스트 R3 검증)
-    · Range regime 진입 시 기존 P1(breakeven) → P2(피라미딩) 경로로 통일
-    · Score 임계: Range만 2.8 → 5.0 (타이트 필터, BULL/BEAR 공히 품질 향상)
-    · 초기 투입: Range도 PYRAMID_INITIAL_RATIO (80%) 적용
-    · status["range_new_mode"] 플래그로 TU 피라미딩과 구분
-    · Range New 포지션은:
-        - 트레일링 미적용 (_update_trailing_stop 스킵)
-        - Regime 전환 시 entry_type 유지 (_check_regime_switch 스킵)
-        - TP 기반 계단손절 + 피라미딩 + -5% ATR 하드스톱만 작동
-    · 백테스트 결과 (R3 vs B0): BULL +24.6% → +59.3% / BEAR +1.0% → +4.7%
-      / 연속자산 12,591K → 16,684K (+32.5%) / OOS MDD 모두 15% 이하
-  - [L1] _check_hard_stop 실패 경로 로그 보강
-    · 주문 실패(L1649) / verify 실패(L1664)에 logger.error 추가
-    · 기존 tg_error 유지, btc_bot.log 가시성 확보
-    · 배경: 2026-04-14 23:38 하드스톱 침묵 사건 (improvement_todo 기록)
-
-v20.2 → v20.3 변경 (대시보드 데이터 완전성 + 알림 주기 개선):
-  - [L1] log_confirmed_trade 페어링 누락 6종 복원
-    · 수동매도(L1534), SELL_PARTIAL TP1/TP2/BE(L1711/1729/1750)
-    · BUY_PYRAMID(L1839), BUY_REINVEST(L1974)
-    · 기존 BUY/SELL 정규 경로(L3103/3201/3304/1659) kwargs 패턴 계승
-  - [R1] 텔레그램 리포트 주기 24회/일 → 6회/일 (4H 봉 마감)
-    · REPORT_HOURS_KST = [0, 4, 8, 12, 16, 20]
-    · 이벤트 기반 추가 발송 4종 (쿨다운 30분):
-      E1) TP 도달 (피라미딩 레벨 상승)
-      E2) 손절선 1% 이내 근접
-      E3) 일손실 -3% 도달
-      E4) 수익률 직전 리포트 대비 ±3% 급변
-  - [D1] dashboard/app.py api_equity_history
-    · SELL + SELL_PARTIAL 모두 포함 (기존은 SELL만)
-    · CONFIRMED 누락분을 TRADES.note "실질:" 파싱으로 fallback 보완
-
-v20.1 → v20.2 변경 (버그 수정 + 안전장치):
-  - [H-2] 동일 캔들 추가매수 중복 차단
-    · _check_partial_tp 피라미딩 체결 시 self._last_pyr_add_candle 세팅
-    · _auto_reinvest 시작부에서 동일 캔들 플래그 체크 → 스킵
-    · 효과: 한 캔들 내 최대 35% 연쇄 진입 방지 (반전 손실 집중 완화)
-  - [C-3] AI 학습 폴백 시 샘플 부족 감지 → 학습 스킵 + WARN
-    · Adaptive 3단계 실패 + 폴백 샘플 < LABEL_MIN_SAMPLES(400) 시
-    · 기존 모델 유지, 텔레그램 WARN 발송
-  - [C-1] 로거 이름 BTC_V180 → BTC_V202 (cosmetic)
-
-v19.0 → v19.1 변경 (추가매수 조건 강화):
-  - [AR2] 잔액 자동 투입 5단계 조건: AI Gate + Trend_Up + EMA 정배열 + 수익+1% + 리스크 필터
-  - [PYR2] 피라미딩 TP 추가매수 조건: AI Gate + EMA 정배열 + KS/MDD/DL 체크
-  - [AVG] 평균 매수가 관리: 추가매수 시 avg_entry_price 재계산 + btc_status.json 영속화
-
-v18.9 → v19.0 변경 (D8 필터 삭제 + 잔액 자동 투입):
-  - [D8] 불필요 필터 4건 삭제 (백테스트 B0→D8: BULL +9.67%pp, 연속 +7.21%)
-    · Time Exit 전체 삭제 — 24봉 횡보/30봉 강제 청산 비활성화
-    · 1H RSI 필터 삭제 — 30~70 범위 차단 해제
-    · BB 상단 이탈 필터 삭제 — ENTRY_BB_FILTER = False
-    · RSI 과매수 필터 삭제 — ENTRY_RSI_MAX 체크 제거
-    · 청산은 ATR손절/트레일링만 담당 (EMA역배열/AI매도는 v19.3/v19.9에서 비활성화)
-  - [AR] 잔액 자동 투입 — 피라미딩+TU 유지 시 매 4H 캔들마다 여유자금 추가매수
-    · 1회 상한: 현재 총 자산의 20% (REINVEST_MAX_RATIO)
-  - [F13] 피처 정리 24→13개 — OHLC 4개 + 중복 7개 제거, 과적합 방지
-  검증: backtest/backtest_filter_removal.py (3구간 OOS, 10조합)
-        D8 BULL +19.45%(24건) / BEAR +1.07%(12건) / 연속 12.07M
-        B0(X1) 11.26M 대비 +811K (+7.21%), MDD 6.1%
-
-v18.7 → v18.8 변경 (T1+T4 적용, 백테스트 검증: OOS PF 1.00→1.19):
-  - [T1] Trend_Up 피라미딩 초기 진입 30% → 60%
-    · max_pyr 4 → 2 (TP1 +20%, TP2 잔여 전부)
-    · PYRAMID_ADD_RATIOS = [0.15] (TP1만), TP2는 PYRAMID_MAX_RATIO 한도 잔여
-    · 계단식 손절: TP1후→진입가, TP2후→TP1
-    · _check_regime_switch pyramid_level 산정: 60%=Lv0, 80%=Lv1, 95%=Lv2
-    · PARTIAL_TP3/4_ATR 제거 (사용처 없음)
-  - [T4] 피라미딩 Time Exit 12/18 → 24/30 (entry_type=="pyramid" 한정)
-    · MAX_HOLD_BARS_PYRAMID=24, MAX_HOLD_BARS_FORCE_PYRAMID=30
-    · 다른 entry_type(trend, breakeven, mean_reversion)은 기존 12/18 유지
-    · 이유: 큰 추세 충분히 보유 효과 (OOS +1.48%, IS는 -0.10%pp)
-
-v18.4 → v18.5 변경:
-  - classify_market() 히스테리시스 도입
-    · Trend 진입: ADX >= 27
-    · Range 해제: ADX <  23
-    · 23 ≤ ADX < 27 회색지대: 직전 Regime 유지 (떨림 방지)
-    · Volatile 판정은 기존 그대로 (ATR 과열장 우선)
-  - btc_status.json 에 last_regime 저장 → 재시작 후에도 직전 Regime 복원
-  - Regime 전환 텔레그램에 ADX 값 표기
-
-v18.3 → v18.4 변경 (백테스트 검증: IS +12.76%, OOS +0.65%, PF 3.07):
-  - P5 Regime별 포지션 관리:
-    · Trend_Up: 피라미딩 (30%→50%→65%→80%→90%+, 계단식 손절)
-    · Range: Break-Even (60% 진입, TP1에서 25% 매도, 손절→본전, 75% 트레일링)
-    · Volatile/Trend_Down: P0 유지 (기존 40%/40% 부분 익절)
-  - _verify_order_filled() 버그 수정: 1초 간격 2~3회 재확인
-  - btc_status.json: pyramid_level, first_entry_price 필드 추가
+변경 이력은 btc_bot_improvement.md / improvement_todo.md / backtest_log.md 참조.
+v20.9.10 (2026-05-02): #74 E2 OFF (데이터 누적 모드) + #75-B 자동 알림 + multi-EMA candle_log.
 """
 
 import os, sys, time, uuid, hashlib, logging, requests, json, joblib, re
@@ -251,17 +99,15 @@ SLIPPAGE_RATE = 0.002
 COST_RATE     = FEE_RATE + SLIPPAGE_RATE
 
 # ── [1단계] AI Gate ───────────────────────────────────────
-AI_GATE_THRESHOLD  = 0.55           # dynamic_threshold 초기값 + 텔레그램 표시용 (호환)
-AI_UNRELIABLE_GATE = 0.62           # 텔레그램 표시용 (호환, gate 영향 없음)
-# v20.9.6: MIN_THRESH/MAX_THRESH/MARKET_*_GATE 제거 (#49 dead code)
+AI_GATE_THRESHOLD  = 0.55           # 텔레그램 표시용 초기값
+AI_UNRELIABLE_GATE = 0.62           # 텔레그램 표시용 (호환)
 # ── XGB Dynamic Gate (실 사용) ───────────────────────────
-XGB_ABS_THRESHOLD        = 0.58  # v18.2: Cold Start fallback 하향 (최적화 결과)
-XGB_DYNAMIC_PERCENTILE   = 60    # 최근 예측값 분포 상위 N% (90→60 완화)
-XGB_DYNAMIC_MIN_SAMPLES  = 20    # 분포 기준 최소 샘플 수
+XGB_ABS_THRESHOLD        = 0.58  # Cold Start fallback
+XGB_DYNAMIC_PERCENTILE   = 60    # 최근 예측값 분포 상위 N%
+XGB_DYNAMIC_MIN_SAMPLES  = 20
 
 # ── Threshold 가드 (P2 사이징 + Phase4) ──────────────────
-THRESHOLD_ADJUST_TRADES = 30    # calc_position_size P2 guard_30 + phase4_min_trades
-# v20.9.6: THRESHOLD_ADJUST_STEP/PF_HIGH/PF_LOW 제거 (_calibrate_threshold 함께 삭제)
+THRESHOLD_ADJUST_TRADES = 30    # calc_position_size P2 guard + phase4_min_trades
 
 # ── [2단계] Rule Score 가중치 ─────────────────────────────
 SCORE_EMA_4H    = 1.2
@@ -330,7 +176,6 @@ PARTIAL_TP_NORMAL_2 = 0.40
 # v18.9 (X1): 초기 80% + TP1 +20% (95% 한도) — 사실상 풀 인베스트
 PYRAMID_INITIAL_RATIO = 0.80   # Trend_Up 초기 진입 비율 (v18.9: 60%→80%)
 PYRAMID_ADD_RATIOS    = [0.15]  # v19.9: 0.20→0.15 (백테스트 #17-B) TP1 추가매수 (TP2는 잔여 전부)
-PYRAMID_MAX_LEVELS    = 2      # v18.8: 4→2 (TP1, TP2 두 단계만) — legacy, 무한 계단에서는 사용 안 함
 PYRAMID_MAX_RATIO     = 0.95   # 포지션 상한 (최소 5% 현금 유지)
 
 # v20.1: 무한 계단손절 (#23 S3)
@@ -433,13 +278,7 @@ LABEL_DOWN_THRESH = -0.012  # Phase2: -0.004→-0.012
 LABEL_FUTURE_BARS = 8       # Phase2: 3봉→8봉 (12h→32h 예측)
 LABEL_MIN_SAMPLES = 400     # Phase2: 800→400 (라벨 기준 상향으로 샘플 감소 허용)
 
-REPORT_HOURS_KST       = [0, 4, 8, 12, 16, 20]  # v20.3: 4H 봉 마감 시점 6회/일
-# v20.6: 이벤트 리포트 전면 비활성화 (상수는 유지, 호출 경로에서 skip)
-EVENT_REPORTS_ENABLED       = False  # v20.6 U1: 정기 리포트만
-EVENT_REPORT_COOLDOWN_SEC   = 1800   # 30분 (unused when EVENT_REPORTS_ENABLED=False)
-EVENT_DAILY_LOSS_THRESHOLD  = 0.03
-EVENT_STOP_NEAR_PCT         = 0.01
-EVENT_PNL_CHANGE_THRESHOLD  = 0.03
+REPORT_HOURS_KST       = [0, 4, 8, 12, 16, 20]  # 4H 봉 마감 시점 6회/일
 
 # v20.6 E2: 일봉 EMA200 기반 BEAR 모드 (신규 진입 전면 OFF)
 # v20.9.10 (2026-05-02): #74 실로그 분석 기반 E2 OFF — BULL 후반 24건 차단 중 88.2%가 수익 신호 (실측).
@@ -1183,11 +1022,6 @@ def generate_monthly_report(ym, equity=None, status=None, push=True, send_tg=Tru
 # ══════════════════════════════════════════════════════════
 # [1단계] AI Gate
 # ══════════════════════════════════════════════════════════
-# v20.9.6: get_ai_gate_threshold 제거 (bt_check_ai_gate_threshold #49 — dead code 확증)
-# 과거: AI_UNRELIABLE_GATE/dynamic_threshold/LOSS_MODE_GATE/MARKET_*_GATE 계산했으나
-#       check_ai_gate 가 threshold arg 를 사용 안 해 전부 무효화됨.
-# 현재: check_ai_gate 가 REGIME_CONFIG 와 dynamic_percentile 만 사용.
-
 def check_ai_gate(xgb_prob, last_xgb_probs=None, market_state="Trend_Up"):
     # Regime별 절대 기준 OR 분포 상위 10% 둘 중 하나 통과 (백테스트와 통일)
     regime_th = REGIME_CONFIG.get(market_state, {}).get("xgb_th", XGB_ABS_THRESHOLD)
@@ -2113,9 +1947,6 @@ class BitcoinBot:
             target=self._telegram_command_listener, daemon=True)
         self._cmd_thread.start()
         self._last_monthly_report = None
-        # v20.3 R1: 이벤트 리포트 상태 (v20.6에서 미사용, 변수는 보존)
-        self._last_event_report = {}   # {event_type: last_dt}
-        self._last_report_pnl   = None
         # v20.6 E2: 일봉 EMA200 BEAR 모드
         self._e2_bear_mode      = False       # 현재 F10 BEAR 모드 여부 (v20.9: F10 기준)
         self._e2_last_refresh   = 0.0         # 마지막 갱신 시각 (epoch)
@@ -2449,9 +2280,6 @@ class BitcoinBot:
             f"발동 이후 24h 이상 경과\n"
             f"이전 사유: {prev_reason}\n"
             f"거래 재개 — 다음 신호부터 정상 동작")
-
-    # v20.9.6: _calibrate_threshold 제거 (#49 dead code — dynamic_threshold 무효화 확증)
-    # dynamic_threshold 필드는 status.json 호환성을 위해 잔존하나 gate 에 영향 없음.
 
     def _check_phase4_alert(self):
         """실전 성과가 백테스트 대비 크게 떨어지면 4단계(피처 정리) 검토 알림"""
@@ -3213,15 +3041,7 @@ class BitcoinBot:
             return ok, total
         except: return True, 0.0
 
-    def _should_send_report(self, force=False, event_type=None):
-        # v20.3 R1: event_type이면 정기 시간대 우회, 쿨다운(30분)만 체크
-        if event_type:
-            now = now_kst()
-            last = self._last_event_report.get(event_type)
-            if last is None:
-                return True
-            if last.tzinfo is None: last = last.replace(tzinfo=KST)
-            return (now - last).total_seconds() >= EVENT_REPORT_COOLDOWN_SEC
+    def _should_send_report(self, force=False):
         if force: return True
         now = now_kst()
         if now.hour not in REPORT_HOURS_KST: return False
@@ -3229,31 +3049,6 @@ class BitcoinBot:
         last = self.last_report_dt
         if last.tzinfo is None: last = last.replace(tzinfo=KST)
         return last.hour != now.hour or last.date() != now.date()
-
-    def _detect_report_event(self, price, balances, equity):
-        """v20.3 R1: E2(손절 근접)/E3(일손실)/E4(수익급변) 이벤트 감지.
-        반환: event_type 문자열 또는 None. E1(TP)은 _check_partial_tp에서 직접 처리."""
-        try:
-            # E3 — 일손실 -3% 도달
-            dl_ok, dl_pct = self._check_daily_loss(equity)
-            if dl_pct is not None and dl_pct <= -EVENT_DAILY_LOSS_THRESHOLD:
-                return "daily_loss"
-            # 포지션 보유 중에만 E2/E4 평가
-            if self.status.get("in_position"):
-                # E2 — 손절선 1% 이내 근접
-                stop = self.status.get("stop_loss", 0.0) or 0.0
-                if stop > 0 and price > 0 and (price - stop) / price < EVENT_STOP_NEAR_PCT:
-                    return "stop_near"
-                # E4 — 수익률 직전 리포트 대비 ±3% 급변
-                avg = self.status.get("avg_entry_price") or self.status.get("entry") or 0.0
-                if avg > 0:
-                    cur_pnl = (price - avg) / avg
-                    if (self._last_report_pnl is not None and
-                            abs(cur_pnl - self._last_report_pnl) >= EVENT_PNL_CHANGE_THRESHOLD):
-                        return "pnl_jump"
-        except Exception as e:
-            logger.debug(f"이벤트 리포트 감지 오류: {e}")
-        return None
 
     def _check_rollback_triggers(self, equity, price):
         """v20.9.10 #75-B: E2 OFF 모드 롤백 트리거 자동 알림.
@@ -3611,12 +3406,8 @@ class BitcoinBot:
             logger.error(f"월간 리포트 오류: {e}", exc_info=True)
 
     # ── 시간당 리포트 ─────────────────────────────────────
-    def _send_report(self, df4h, price, balances, atr_result, force=False, event_type=None):
-        # v20.6 U1: 이벤트 리포트 전면 비활성화 (매매 알림·시스템 알림은 별도 경로 유지)
-        if event_type and not EVENT_REPORTS_ENABLED:
-            return
-        # v20.3 R1: event_type 경로는 쿨다운만 체크 (정기 시간대 우회)
-        if not self._should_send_report(force=force, event_type=event_type): return
+    def _send_report(self, df4h, price, balances, atr_result, force=False):
+        if not self._should_send_report(force=force): return
         try:
             kst_now = now_kst()
             equity  = balances["KRW"] + balances[COIN] * price
@@ -4044,24 +3835,8 @@ class BitcoinBot:
             })
             sent = tg_info(msg)
             if sent:
-                _now = now_kst()
-                if event_type:
-                    self._last_event_report[event_type] = _now
-                    logger.info(f"이벤트 리포트 전송 [{event_type}] ({fmt_kst()})")
-                else:
-                    self.last_report_dt = _now
-                    logger.info(f"리포트 전송 ({fmt_kst()})")
-                # v20.3 R1-E4: 직전 리포트 수익률 스냅샷 (급변 감지용)
-                try:
-                    if self.status.get("in_position"):
-                        _avg_e = (self.status.get("avg_entry_price")
-                                  or self.status.get("entry") or 0.0)
-                        if _avg_e > 0 and price > 0:
-                            self._last_report_pnl = (price - _avg_e) / _avg_e
-                    else:
-                        self._last_report_pnl = None
-                except Exception:
-                    pass
+                self.last_report_dt = now_kst()
+                logger.info(f"리포트 전송 ({fmt_kst()})")
             else:
                 logger.warning("리포트 실패 재시도 예정")
             self._save_status()
@@ -4275,8 +4050,6 @@ class BitcoinBot:
                     time.sleep(30); continue
                 self._check_partial_tp(price, balances, cur_atr, df4h)
                 self._send_report(df4h, price, balances, atr_result)
-                # v20.6 U1: 이벤트 리포트(E2/E3/E4) 제거. 정기 리포트만 유지.
-                # _detect_report_event / _should_send_report(event_type=...) 호출 부 비활성화.
                 self._check_monthly_report(equity)
 
                 # ── 30초 실시간 스냅샷 (대시보드용) ──
@@ -4347,12 +4120,7 @@ class BitcoinBot:
                 cd_ok   = (time.time() - last_t) > cd_secs
                 ai_rel  = ai_engine.is_reliable()
 
-                # ── Threshold 자동 보정 (매 캔들마다 체크) ──
-                # v20.9.6: _calibrate_threshold() 호출 제거 (#49 dead code)
-
-                # ── 시장 상태 (매수/매도/signal log 공통) ──────
-                # adx_info는 위에서 get_adx_full(df4h)로 계산됨
-                # v18.5: 회색지대(23~27)에서 캔들 내 떨림 방지 — prev_regime 전달
+                # ── 시장 상태 (회색지대 prev_regime 유지) ──────
                 market_state = classify_market(
                     atr_ok, atr_regime, adx_info,
                     prev_regime=self._last_market_state)
