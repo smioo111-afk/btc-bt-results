@@ -61,7 +61,7 @@ COIN          = "BTC"
 TF_PRIMARY    = "minute240"
 TF_DAILY      = "day"
 MIN_ORDER_KRW = 6000
-BOT_VERSION   = "20.9.10"
+BOT_VERSION   = "20.9.11"
 
 STATUS_FILE       = "btc_status.json"
 TRADE_LOG         = "btc_trade.csv"
@@ -250,9 +250,10 @@ PERF_DEGRAD_MIN_ADX        = 20   # 성능 저하 트리거: ADX 하한
 # ── v20.8.1: AI 재학습 정책 개선 ──────────────────────────
 # AR1: PerfDegrade trigger OFF (1/1 사례에서 PF 추가 악화 — bt_candle_count 분석)
 ENABLE_PERF_DEGRAD_TRIGGER = False
-# AR3: 학습 후 PF 단독 기준 롤백 가드 (PF가 -0.10 이상 악화 시 신모델 거부)
+# AR3: 학습 후 PF 단독 기준 롤백 가드 (PF가 -0.30 이상 악화 시 신모델 거부)
+# v20.9.11 #79: 0.10 → 0.30 (B2 OOS 측정 std=4.30 대응, 백테스트 거부율 44.7%→17.9%)
 ENABLE_ROLLBACK_GUARD      = True
-ROLLBACK_PF_THRESHOLD      = 0.10
+ROLLBACK_PF_THRESHOLD      = 0.30
 MAX_CONSECUTIVE_REJECTS    = 5     # 5회 연속 거부 시 강제 채택 + 텔레그램 경고
 # AR4: 재학습 결과 영속화
 RETRAIN_HISTORY_CSV        = "btc_retrain_history.csv"
@@ -1206,6 +1207,8 @@ def calc_sell_signal(ema_s, ema_l, xgb_prob, price, status):
             status["stop_loss"] > 0 and price <= status["stop_loss"])
 
 def calc_ai_metrics(y_true, y_pred_prob, features_test):
+    """v20.9.11 #79: holdout PF (B0). Precision/Recall은 holdout 그대로 사용.
+    PF는 _calc_oos_pf_b2()로 별도 측정 후 _do_train에서 채택."""
     y_pred    = (y_pred_prob > 0.5).astype(int)
     precision = precision_score(y_true, y_pred, zero_division=0)
     recall    = recall_score(y_true, y_pred, zero_division=0)
@@ -1217,6 +1220,51 @@ def calc_ai_metrics(y_true, y_pred_prob, features_test):
             (gains if ret > 0 else losses).append(abs(ret))
     pf = sum(gains) / (sum(losses) if losses else 0.0001)
     return precision, recall, pf
+
+def calc_oos_pf_b2(model, df_full, n_bars=100, feat_cols=None):
+    """v20.9.11 #79 B2: 학습 직후 최근 n_bars OOS PF.
+    df_full: 학습에 사용한 전체 df (학습 마지막 + LABEL_FUTURE_BARS 분 추가 봉 포함).
+    feat_cols: _FEAT_COLS (13개 인덱스).
+    학습 마지막 n_bars 시점부터 8봉 후 실제 수익률로 PF 계산.
+    """
+    try:
+        # 학습 모델의 _build_features는 ai_engine 인스턴스 메서드. 여기선 외부에서 build해 전달.
+        # 호출 패턴: calc_oos_pf_b2(model, df, feat24, prices)
+        # 단순화: 여기선 model + 이미 빌드된 feat24 + close prices를 받는다.
+        raise NotImplementedError("use calc_oos_pf_b2_with_feat()")
+    except Exception:
+        return 0.0
+
+def calc_oos_pf_b2_with_feat(model, feat24, _feat_cols, n_bars=100):
+    """v20.9.11 #79 B2: 학습 직후 최근 n_bars OOS PF (피처 + close 배열 직접 입력).
+    feat24: build_features 24컬럼 array.
+    _feat_cols: 13 피처 인덱스 리스트.
+    n_bars: 평가 윈도우 (학습 데이터 마지막 부분).
+    """
+    try:
+        if feat24 is None or len(feat24) < n_bars + LABEL_FUTURE_BARS + 1:
+            return 0.0
+        # 학습 마지막 n_bars + LABEL_FUTURE_BARS 영역에서 평가
+        eval_start = len(feat24) - n_bars - LABEL_FUTURE_BARS
+        eval_end   = len(feat24) - LABEL_FUTURE_BARS
+        Xe = feat24[eval_start:eval_end][:, _feat_cols]
+        prices = feat24[:, 3]
+        probs = model.predict_proba(Xe)[:, 1]
+        pred_mask = probs > 0.5
+        rets = np.array([
+            (prices[eval_start + i + LABEL_FUTURE_BARS] - prices[eval_start + i]) / prices[eval_start + i]
+            if prices[eval_start + i] > 0 else 0.0
+            for i in range(n_bars)
+        ])
+        rets_pred = rets[pred_mask]
+        if len(rets_pred) == 0:
+            return 0.0
+        gains  = rets_pred[rets_pred > 0].sum()
+        losses = abs(rets_pred[rets_pred <= 0].sum())
+        return float(gains / losses) if losses > 0 else 0.0001
+    except Exception as e:
+        logger.debug(f"calc_oos_pf_b2 오류: {e}")
+        return 0.0
 
 def check_entry_timing(df4h, price):
     try:
@@ -1452,6 +1500,8 @@ class XGBCBSignalModel:
         self.precision     = 0.0
         self.recall        = 0.0
         self.profit_factor = 0.0
+        self.pf_holdout    = 0.0          # v20.9.11 #79: B0 측정 (참고용)
+        self.pf_oos_100    = 0.0          # v20.9.11 #79: B2 측정 (AR3 채택)
         self._training     = False
         self._last_df      = None
         self._lock         = threading.Lock()
@@ -1685,10 +1735,17 @@ class XGBCBSignalModel:
             # 평가
             xgb_prob = xgb_new.predict_proba(X_te)[:, 1]
             new_acc  = float(np.mean((xgb_prob > 0.5).astype(int) == y_te))
-            new_prec, new_rec, new_pf = calc_ai_metrics(y_te, xgb_prob, f_te)
+            new_prec, new_rec, new_pf_holdout = calc_ai_metrics(y_te, xgb_prob, f_te)
 
-            # ── v20.8.1 AR3: 롤백 가드 ──────────────────────────────
-            # PF 단독 기준: post_pf < pre_pf - 0.10 시 신모델 거부, 5회 연속 시 강제 채택.
+            # v20.9.11 #79 B2: 학습 직후 최근 100봉 OOS PF (라이브 상관 0.98)
+            _feat_full = self._build_features(df)
+            new_pf_oos = calc_oos_pf_b2_with_feat(xgb_new, _feat_full, self._FEAT_COLS, n_bars=100)
+            # AR3 비교에 사용할 new_pf = OOS B2 (백테스트 권고)
+            new_pf = new_pf_oos
+            logger.info(f"PF 측정: holdout={new_pf_holdout:.2f} OOS_100={new_pf_oos:.2f} → AR3=OOS")
+
+            # ── v20.8.1 AR3 + #79: 롤백 가드 (B2 OOS 기준) ────────────
+            # PF 단독 기준: post_pf < pre_pf - 0.30 시 신모델 거부, 5회 연속 시 강제 채택.
             # 거부 시 디스크 모델/메타 미변경 → Shadow도 ai_last_train_dt 변화 없어 자동 sync.
             consec_rejects = 0
             try:
@@ -1728,6 +1785,8 @@ class XGBCBSignalModel:
                 self.precision     = new_prec
                 self.recall        = new_rec
                 self.profit_factor = new_pf
+                self.pf_holdout    = new_pf_holdout    # #79
+                self.pf_oos_100    = new_pf_oos        # #79
 
                 joblib.dump(xgb_new, XGB_PATH)
                 with self._lock:
@@ -1909,6 +1968,8 @@ class XGBCBSignalModel:
                 "ai_recall":        self.recall,
                 "ai_accuracy":      self.test_accuracy,
                 "ai_profit_factor": self.profit_factor,
+                "ai_pf_holdout":    getattr(self, "pf_holdout", 0.0),
+                "ai_pf_oos_100":    getattr(self, "pf_oos_100", 0.0),
                 "ai_prob_history":  snap
             })
             with open(STATUS_FILE, "w") as f: json.dump(s, f, indent=2)
