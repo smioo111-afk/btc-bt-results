@@ -1773,19 +1773,41 @@ class XGBCBSignalModel:
                 )
             else:
                 # 거부: old 메트릭 유지, 디스크 모델 미변경, _save_ai_meta 미호출
+                # #FIX: 거부 시에도 candles_since_retrain 리셋 — 무한 재시도 루프 방지
+                self._counter_reset_pending = True
+                logger.info("거부 후 candles_since_retrain 리셋 — 다음 30캔들까지 대기")
                 logger.error(f"❌ 신모델 거부 [v20.8.1 AR3]: {reject_reason}")
-                tg_error(
-                    f"⚠️ *AI 신모델 거부* (v{BOT_VERSION})\n"
-                    f"🕐 {fmt_kst()}\n"
-                    f"📌 트리거: {reason_str}\n"
-                    f"──────────────────\n"
-                    f"PF: {old_pf:.2f}→{new_pf:.2f} (-{old_pf - new_pf:.2f})\n"
-                    f"Prec: {old_prec:.1%}→{new_prec:.1%}\n"
-                    f"임계: PF -{ROLLBACK_PF_THRESHOLD:.2f}\n"
-                    f"연속거부: {consec_rejects}/{MAX_CONSECUTIVE_REJECTS}\n"
-                    f"──────────────────\n"
-                    f"기존 모델 유지 (Prec={old_prec:.1%} PF={old_pf:.2f})"
-                )
+                # #FIX: 텔레그램 dedup 24h (같은 PF 거부 반복 알림 방지)
+                _now_ts = time.time()
+                _send_tg_alert = True
+                try:
+                    with open(STATUS_FILE) as _f: _st_a = json.load(_f)
+                    _last_alert = float(_st_a.get("last_alert_train_reject", 0) or 0)
+                    _last_pf_pair = _st_a.get("last_alert_train_reject_pf", "")
+                    _cur_pair = f"{old_pf:.2f}->{new_pf:.2f}"
+                    if (_now_ts - _last_alert) < 86400 and _last_pf_pair == _cur_pair:
+                        _send_tg_alert = False
+                        logger.info(f"텔레그램 거부 알림 skip (24h dedup, 같은 PF {_cur_pair})")
+                except Exception: pass
+                if _send_tg_alert:
+                    tg_error(
+                        f"⚠️ *AI 신모델 거부* (v{BOT_VERSION})\n"
+                        f"🕐 {fmt_kst()}\n"
+                        f"📌 트리거: {reason_str}\n"
+                        f"──────────────────\n"
+                        f"PF: {old_pf:.2f}→{new_pf:.2f} (-{old_pf - new_pf:.2f})\n"
+                        f"Prec: {old_prec:.1%}→{new_prec:.1%}\n"
+                        f"임계: PF -{ROLLBACK_PF_THRESHOLD:.2f}\n"
+                        f"연속거부: {consec_rejects}/{MAX_CONSECUTIVE_REJECTS}\n"
+                        f"──────────────────\n"
+                        f"기존 모델 유지 (Prec={old_prec:.1%} PF={old_pf:.2f})"
+                    )
+                    try:
+                        with open(STATUS_FILE) as _f: _st_a = json.load(_f)
+                        _st_a["last_alert_train_reject"] = _now_ts
+                        _st_a["last_alert_train_reject_pf"] = f"{old_pf:.2f}->{new_pf:.2f}"
+                        with open(STATUS_FILE, "w") as _f: json.dump(_st_a, _f, indent=2)
+                    except Exception: pass
 
             # ── v20.8.1 AR3 후처리: status 필드 갱신 ─────────────────
             try:
