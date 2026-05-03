@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BTC AI Bot</title>
+<script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--bdr:#30363d;--txt:#c9d1d9;--dim:#8b949e;--blue:#58a6ff;--grn:#3fb950;--red:#f85149;--yel:#d29922}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',monospace;font-size:13px}
+.hdr{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid var(--bdr)}
+.hdr h1{font-size:15px;color:var(--blue);font-weight:600}
+.hdr .r{color:var(--dim);font-size:11px}
+.hdr a{color:var(--dim);text-decoration:none;margin-left:10px}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px}
+.dot.on{background:var(--grn)}.dot.off{background:var(--red)}
+.tv-section{border-bottom:1px solid var(--bdr)}
+.tv-tabs{display:flex;gap:0;background:var(--card);border-bottom:1px solid var(--bdr);padding:0 8px}
+.tv-tab{background:transparent;border:none;color:var(--dim);padding:6px 12px;cursor:pointer;font-size:11px;font-family:inherit;border-bottom:2px solid transparent}
+.tv-tab:hover{color:var(--txt)}.tv-tab.active{color:var(--blue);border-bottom-color:var(--blue)}
+#tv-widget{width:100%;height:38vh;min-height:260px}
+#lw-chart{width:100%;height:30vh;min-height:220px;background:var(--card);border-bottom:1px solid var(--bdr)}
+.lw-label{padding:4px 10px;font-size:11px;color:var(--dim);background:var(--card);border-bottom:1px solid var(--bdr)}
+.lw-label span{margin-right:14px}
+.lw-label .c-ema21{color:#58a6ff}.lw-label .c-ema55{color:#d29922}.lw-label .c-vwap{color:#8b949e}
+.summary{display:flex;flex-wrap:wrap;gap:0;border-bottom:1px solid var(--bdr);background:var(--card)}
+.summary .item{flex:1 1 auto;min-width:110px;padding:10px 14px;border-right:1px solid var(--bdr);text-align:center}
+.summary .item:last-child{border-right:none}
+.summary .label{color:var(--dim);font-size:10px;text-transform:uppercase;margin-bottom:2px}
+.summary .value{font-size:14px;font-weight:700}
+.grn{color:var(--grn)}.red{color:var(--red)}.yel{color:var(--yel)}
+.sec{background:var(--card);border:1px solid var(--bdr);border-radius:6px;margin:6px 10px;padding:10px 12px}
+.sec h3{font-size:12px;color:var(--blue);font-weight:600;margin-bottom:6px}
+.row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #21262d}
+.row:last-child{border:none}
+.lbl{color:var(--dim)}.ok{color:var(--grn)}.ng{color:var(--red)}.warn{color:var(--yel)}
+.gauge{height:4px;background:#21262d;border-radius:2px;margin-top:3px;overflow:hidden}
+.gauge-fill{height:100%;border-radius:2px;transition:width .5s}
+.gauge-fill.g-ok{background:var(--grn)}.gauge-fill.g-ng{background:var(--red)}.gauge-fill.g-mid{background:var(--yel)}
+.delta{font-size:10px;margin-left:4px}.delta.up{color:var(--grn)}.delta.dn{color:var(--red)}
+.thresh{color:var(--dim);font-size:10px;margin-left:4px}
+/* ── Fixed-width metric table ── */
+.mtbl{width:100%;table-layout:fixed;border-collapse:collapse;font-size:12px}
+.mtbl td{padding:4px 0;border-bottom:1px solid #21262d;vertical-align:middle}
+.mtbl tr:last-child td{border:none}
+.mtbl .c-lbl{width:80px;color:var(--dim)}
+.mtbl .c-val{width:90px;text-align:right;font-weight:600;white-space:nowrap}
+.mtbl .c-bar{padding:0 8px}
+.mtbl .c-info{width:120px;text-align:right;color:var(--dim);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vwap-bar{height:6px;background:#21262d;border-radius:3px;position:relative;margin-top:3px}
+.vwap-bar .vwap-mid{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--dim);left:50%;transform:translateX(-1px)}
+.vwap-bar .vwap-fill{position:absolute;top:0;height:100%;border-radius:3px}
+/* ── Rule Score / Risk — preview style ── */
+.sec h3.with-total{display:flex;justify-content:space-between;align-items:baseline}
+.sec h3.with-total .total{font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600}
+.sec h3.with-total .total.ok{color:var(--grn)}
+.sec h3.with-total .total.ng{color:var(--red)}
+.sec h3.with-total .total.warn{color:var(--yel)}
+.sec h3.with-total .total .max{color:var(--dim);font-size:12px;margin-left:2px}
+.si{margin:10px 0}
+.si:first-child{margin-top:2px}
+.si:last-child{margin-bottom:0}
+.si .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;gap:6px}
+.si .top .lbl{font-size:11px;color:var(--dim);min-width:56px;flex-shrink:0}
+.si .top .val{font-size:11px;color:#c0c8d8;font-family:monospace;flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.si .top .pts{font-size:13px;font-weight:600;font-family:monospace;min-width:30px;text-align:right}
+.si .pts.pass{color:var(--grn)}
+.si .pts.fail{color:var(--red)}
+.si .pts.warn{color:var(--yel)}
+.bi-bar,.pct-bar{position:relative;height:18px;background:#1a2236;border-radius:3px;overflow:hidden}
+.bi-bar .mid{position:absolute;left:50%;top:0;bottom:0;width:1px;background:#3a4560;z-index:2}
+.bi-bar .fill{position:absolute;top:2px;bottom:2px;border-radius:2px;z-index:1;transition:all .3s}
+.bi-bar .fill.pos{left:50%;background:linear-gradient(90deg,#22c55e,#4ade80)}
+.bi-bar .fill.neg{right:50%;background:linear-gradient(90deg,#f87171,#ef4444)}
+.bi-bar .dot,.pct-bar .dot{position:absolute;top:50%;transform:translate(-50%,-50%);width:8px;height:8px;border-radius:50%;background:#fff;border:2px solid #0a0e17;z-index:3}
+.pct-bar .zone{position:absolute;top:0;bottom:0;background:rgba(74,222,128,0.1);border-left:1px dashed rgba(74,222,128,0.3);border-right:1px dashed rgba(74,222,128,0.3);z-index:0}
+.pct-bar .zone.warn{background:rgba(248,113,113,0.1);border-left-color:rgba(248,113,113,0.3);border-right-color:rgba(248,113,113,0.3)}
+.pct-bar .zone.line{background:#3a4560;border:none}
+.pct-bar .fill{position:absolute;top:2px;bottom:2px;left:0;border-radius:2px;z-index:1;background:linear-gradient(90deg,#22c55e,#4ade80)}
+.pct-bar .fill.bad{background:linear-gradient(90deg,#f87171,#ef4444)}
+.pct-bar .fill.mid{background:linear-gradient(90deg,#d29922,#e8b14a)}
+.pct-bar .fill.dim{background:#3a4560}
+.bar-lbl{display:flex;justify-content:space-between;font-size:9px;color:#555e70;font-family:monospace;margin-top:3px;position:relative}
+.bar-lbl .mid-lbl{position:absolute;left:50%;transform:translateX(-50%)}
+.sec-div{height:1px;background:#21262d;margin:10px 0 4px}
+.ir{display:flex;justify-content:space-between;align-items:center;padding:4px 0}
+.ir .l{font-size:11px;color:var(--dim)}
+.ir .v{font-size:12px;font-family:monospace}
+table{width:100%;border-collapse:collapse;font-size:11px}
+th{text-align:left;color:var(--dim);padding:4px 6px;border-bottom:1px solid var(--bdr)}
+td{padding:4px 6px;border-bottom:1px solid #21262d}
+.buy{color:var(--grn)}.sell{color:var(--red)}
+.tab-bar{display:flex;gap:0;border-bottom:1px solid var(--bdr);margin-bottom:0}
+.tab{background:transparent;border:none;color:var(--dim);padding:8px 16px;cursor:pointer;font-size:12px;font-family:inherit;border-bottom:2px solid transparent}
+.tab:hover{color:var(--txt)}.tab.active{color:var(--blue);border-bottom-color:var(--blue)}
+.tab-body{background:var(--card);border:1px solid var(--bdr);border-top:none;border-radius:0 0 6px 6px;padding:6px;overflow-x:auto}
+.pnl-chart{height:140px;position:relative}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <h1><span class="dot on" id="dot"></span>BTC AI Bot <span id="ver"></span></h1>
+  <div class="r"><span id="ts"></span></div>
+</div>
+
+<div class="tv-section">
+  <div class="tv-tabs">
+    <button class="tv-tab" onclick="setTF('1',this)">1분</button>
+    <button class="tv-tab" onclick="setTF('30',this)">30분</button>
+    <button class="tv-tab" onclick="setTF('60',this)">1시간</button>
+    <button class="tv-tab active" onclick="setTF('240',this)">4시간</button>
+    <button class="tv-tab" onclick="setTF('D',this)">일봉</button>
+  </div>
+  <div id="tv-widget"></div>
+</div>
+<div class="lw-label"><span class="c-ema21">━ EMA 21</span><span class="c-ema55">━ EMA 55</span><span class="c-vwap">╌ VWAP 20</span><span>▲ 매수 ▼ 매도</span></div>
+<div id="lw-chart"></div>
+
+<div class="summary" id="summary"></div>
+
+<div class="sec" id="s-gate"><h3>AI Gate</h3><div id="gate-body">로딩...</div></div>
+<div class="sec" id="s-score"><h3 class="with-total"><span>Rule Score</span><span class="total" id="score-total">-</span></h3><div id="score-body">로딩...</div></div>
+<div class="sec" id="s-filter"><h3>필터</h3><div id="filter-body">로딩...</div></div>
+<div class="sec" id="s-risk"><h3 class="with-total"><span>리스크</span><span class="total" id="risk-total">-</span></h3><div id="risk-body">로딩...</div></div>
+<div class="sec" id="s-e2"><h3 class="with-total"><span>E2 BEAR Mode</span><span class="total" id="e2-total">-</span></h3><div id="e2-body">로딩...</div></div>
+<div class="sec" id="s-pos"><h3>포지션</h3><div id="pos-body">로딩...</div></div>
+
+<div class="sec"><h3 class="with-total"><span>누적 손익</span><span class="total" id="pnl-total" style="font-size:12px">-</span></h3><div class="pnl-chart"><canvas id="pnlChart"></canvas></div></div>
+
+<div style="padding:6px 10px">
+  <div class="tab-bar">
+    <button class="tab active" onclick="switchTab('trades',this)">매매내역</button>
+    <button class="tab" onclick="switchTab('signals',this)">신호로그</button>
+    <button class="tab" onclick="switchTab('candles',this)">캔들로그</button>
+    <button class="tab" onclick="switchTab('retrain',this)">AI 재학습</button>
+    <button class="tab" onclick="switchTab('help',this)">도움말</button>
+  </div>
+  <div class="tab-body" id="tab-trades">
+    <table><thead><tr><th>시간</th><th>유형</th><th>가격</th><th>금액</th><th>손익</th><th>사유</th><th>시장</th></tr></thead><tbody id="tb"></tbody></table>
+  </div>
+  <div class="tab-body" id="tab-signals" style="display:none">
+    <table><thead><tr><th>시간</th><th>이벤트</th><th>XGB</th><th>임계</th><th>신호</th><th>시장상태</th><th>점수</th></tr></thead><tbody id="tb-sig"></tbody></table>
+  </div>
+  <div class="tab-body" id="tab-candles" style="display:none">
+    <table><thead><tr><th>시간</th><th>가격</th><th>EMA</th><th>XGB</th><th>점수</th><th>진입</th><th>+4봉%</th><th>+8봉%</th></tr></thead><tbody id="tb-cdl"></tbody></table>
+  </div>
+  <!-- v20.8.1 DASH5: AI 재학습 이력 -->
+  <div class="tab-body" id="tab-retrain" style="display:none">
+    <table><thead><tr><th>시각</th><th>트리거</th><th>PF (전→후)</th><th>Prec</th><th>샘플</th><th>Regime</th><th>채택</th><th>거부사유</th></tr></thead><tbody id="tb-retrain"></tbody></table>
+  </div>
+  <!-- v20.8.1 DASH6: 텔레그램 명령 도움말 -->
+  <div class="tab-body" id="tab-help" style="display:none">
+    <div style="padding:10px;font-size:12px;line-height:1.7">
+      <h4 style="margin:0 0 8px 0;color:#58a6ff">🤖 텔레그램 명령</h4>
+      <table class="mtbl"><tbody>
+        <tr><td><code>/killswitch off</code></td><td>수동 해제</td></tr>
+        <tr><td><code>/killswitch status</code></td><td>현재 상태 + 24h 카운트 + 발동/복구 이력</td></tr>
+        <tr><td><code>/killswitch reset</code></td><td>24h 카운터 초기화 + 강제 해제 (비상시)</td></tr>
+        <tr><td><code>/report</code></td><td>다음 루프에 즉시 리포트 전송</td></tr>
+        <tr><td><code>/pause</code> / <code>/resume</code></td><td>진입 일시중단 / 재개</td></tr>
+        <tr><td><code>/log &lt;keyword&gt; [N]</code></td><td>로그 검색 (마지막 N건)</td></tr>
+        <tr><td><code>/retrain</code></td><td>강제 재학습 (관리용)</td></tr>
+      </tbody></table>
+      <h4 style="margin:14px 0 8px 0;color:#58a6ff">📡 시스템 상태 (v20.8.1)</h4>
+      <ul style="margin:0;padding-left:20px;color:#8b949e">
+        <li><b>Kill Switch</b>: MDD 한도 -20%, PF 기준 0.7. 자동복구 (MDD&lt;10% + 24h). 24h 내 2회 발동 시 영구 중단</li>
+        <li><b>AI 재학습 정책</b>: Periodic (30캔들) + Regime 전환만. PerfDegrade 트리거 OFF (v20.8.1 AR1)</li>
+        <li><b>롤백 가드</b>: 학습 후 PF가 -0.10 이상 악화 시 신모델 거부, 5회 연속 거부 시 강제 채택 (AR3)</li>
+        <li><b>재시작</b>: candles_since_retrain 자동 0 리셋 → 즉시 재학습 방지 (AR2)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const fmt = n => n != null ? Number(n).toLocaleString('ko-KR',{maximumFractionDigits:0}) : '-';
+const pct = n => n != null ? (n>=0?'+':'')+Number(n).toFixed(2)+'%' : '-';
+const mk = (l,v,c) => `<tr><td class="c-lbl">${l}</td><td colspan="3" class="${c||''}">${v}</td></tr>`;
+const ic = ok => ok ? '<span class="ok">OK</span>' : '<span class="ng">NG</span>';
+
+let _prev = {};
+function delta(key, cur, dec=1) {
+  const p = _prev[key]; _prev[key] = cur;
+  if (p == null || Math.abs(cur - p) < 0.01) return '';
+  const d = cur - p;
+  return ` <span class="delta ${d>0?'up':'dn'}">${d>0?'▲':'▼'}${Math.abs(d).toFixed(dec)}</span>`;
+}
+function gauge(cur, min, max, th) {
+  const r = max - min || 1;
+  const p = Math.max(0, Math.min(100, ((cur-min)/r)*100));
+  let c = 'g-mid';
+  if (th) { if (cur >= th.ok) c='g-ok'; else if (cur < th.ng) c='g-ng'; }
+  return `<div class="gauge"><div class="gauge-fill ${c}" style="width:${p}%"></div></div>`;
+}
+function mrow(l, v, bar, thr) {
+  return `<tr><td class="c-lbl">${l}</td><td class="c-val">${v}</td><td class="c-bar">${bar||''}</td><td class="c-info">${thr||''}</td></tr>`;
+}
+function vwapBar(price, vwap) {
+  if (!vwap||vwap<=0) return '';
+  const d = Math.max(-3,Math.min(3,(price-vwap)/vwap*100));
+  const p = 50+(d/3)*50;
+  const col = d>=0?'var(--grn)':'var(--red)';
+  const left = d>=0?'50%':p+'%';
+  const w = d>=0?(p-50)+'%':(50-p)+'%';
+  return `<div class="vwap-bar"><div class="vwap-mid"></div><div class="vwap-fill" style="left:${left};width:${w};background:${col}"></div></div>`;
+}
+// ── Rule Score / Risk 섹션 헬퍼 ──
+function clamp(x,a,b){return Math.max(a,Math.min(b,x));}
+function biBar(value, maxAbs){
+  // 중앙(50%) 기준 양방향 바. value 범위 [-maxAbs, +maxAbs]. dot 위치 + fill.
+  const v = clamp(value, -maxAbs, maxAbs);
+  const pos = 50 + (v/maxAbs)*50;
+  const fillW = Math.abs(v/maxAbs)*50;
+  const cls = v >= 0 ? 'pos' : 'neg';
+  return `<div class="bi-bar"><div class="mid"></div><div class="fill ${cls}" style="width:${fillW.toFixed(1)}%"></div><div class="dot" style="left:${clamp(pos,0,100).toFixed(1)}%"></div></div>`;
+}
+function pctBar(valuePct, opts){
+  opts = opts || {};
+  const p = clamp(valuePct, 0, 100);
+  const fCls = opts.fillCls || '';
+  let zone = '';
+  if (opts.zone) {
+    const [zmin, zmax, zcls] = opts.zone;
+    const zw = Math.max(0.5, zmax - zmin);
+    zone = `<div class="zone ${zcls||''}" style="left:${zmin}%;width:${zw}%"></div>`;
+  }
+  const dot = opts.noDot ? '' : `<div class="dot" style="left:${p.toFixed(1)}%"></div>`;
+  return `<div class="pct-bar">${zone}<div class="fill ${fCls}" style="width:${p.toFixed(1)}%"></div>${dot}</div>`;
+}
+function si(label, valStr, pts, bar, barLbl){
+  let ptsStr, cls;
+  if (typeof pts === 'number') {
+    ptsStr = pts.toFixed(1);
+    cls = pts > 0 ? 'pass' : 'fail';
+  } else {
+    ptsStr = pts;
+    cls = pts === '✅' ? 'pass' : pts === '⏳' ? 'warn' : 'fail';
+  }
+  return `<div class="si"><div class="top"><span class="lbl">${label}</span><span class="val">${valStr}</span><span class="pts ${cls}">${ptsStr}</span></div>${bar}${barLbl?`<div class="bar-lbl">${barLbl}</div>`:''}</div>`;
+}
+function infoRow(label, value, cls){
+  return `<div class="ir"><span class="l">${label}</span><span class="v ${cls||''}">${value}</span></div>`;
+}
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-body').forEach(el=>el.style.display='none');
+  document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));
+  document.getElementById('tab-'+name).style.display='';
+  btn.classList.add('active');
+}
+
+// ── TradingView Widget ──
+let tvInterval = '240';
+function setTF(tf, btn) {
+  tvInterval = tf;
+  document.querySelectorAll('.tv-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active'); loadTV();
+}
+function loadTV() {
+  const c=$('#tv-widget'); c.innerHTML='';
+  const w=document.createElement('div'); w.className='tradingview-widget-container'; w.style.height='100%'; w.style.width='100%';
+  const wd=document.createElement('div'); wd.className='tradingview-widget-container__widget'; wd.style.height='calc(100% - 32px)'; wd.style.width='100%';
+  w.appendChild(wd);
+  const s=document.createElement('script');
+  s.src='https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js'; s.async=true;
+  s.innerHTML=JSON.stringify({symbol:"UPBIT:BTCKRW",interval:tvInterval,timezone:"Asia/Seoul",theme:"dark",style:"1",locale:"kr",hide_top_toolbar:false,hide_legend:false,allow_symbol_change:false,save_image:false,height:"100%",width:"100%"});
+  w.appendChild(s); c.appendChild(w);
+}
+
+// ── Lightweight Charts ──
+let lwChart, lwCandles, lwEma21, lwEma55, lwVwap, lwVol;
+try {
+  const lwEl = $('#lw-chart');
+  lwChart = LightweightCharts.createChart(lwEl, {
+    width:lwEl.clientWidth, height:lwEl.clientHeight,
+    layout:{background:{color:'#161b22'},textColor:'#8b949e'},
+    grid:{vertLines:{color:'#21262d'},horzLines:{color:'#21262d'}},
+    crosshair:{mode:0},
+    timeScale:{timeVisible:true,secondsVisible:false,borderColor:'#30363d'},
+    rightPriceScale:{borderColor:'#30363d'},
+  });
+  lwCandles = lwChart.addCandlestickSeries({upColor:'#3fb950',downColor:'#f85149',borderUpColor:'#3fb950',borderDownColor:'#f85149',wickUpColor:'#3fb950',wickDownColor:'#f85149'});
+  lwEma21 = lwChart.addLineSeries({color:'#58a6ff',lineWidth:1,priceLineVisible:false,lastValueVisible:false});
+  lwEma55 = lwChart.addLineSeries({color:'#d29922',lineWidth:1,priceLineVisible:false,lastValueVisible:false});
+  lwVwap = lwChart.addLineSeries({color:'#8b949e',lineWidth:1,lineStyle:2,priceLineVisible:false,lastValueVisible:false});
+  lwVol = lwChart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:'vol'});
+  lwChart.priceScale('vol').applyOptions({scaleMargins:{top:0.85,bottom:0}});
+  window.addEventListener('resize',()=>{lwChart.applyOptions({width:lwEl.clientWidth,height:lwEl.clientHeight});});
+} catch(e) { console.error('LW init error',e); }
+
+let pnlChart = null;
+
+async function loadChart() {
+  try {
+    const [data, ctrades, ftrades] = await Promise.all([
+      fetch('/api/ohlcv').then(r=>r.json()),
+      fetch('/api/confirmed_trades').then(r=>r.json()).catch(()=>[]),
+      fetch('/api/trades').then(r=>r.json()).catch(()=>[]),
+    ]);
+    if (!data||data.error||!data.candles||!lwCandles) return;
+    const trades = (Array.isArray(ctrades)&&ctrades.length)?ctrades:ftrades;
+    lwCandles.setData(data.candles);
+    lwEma21.setData(data.ema21);
+    lwEma55.setData(data.ema55);
+    lwVwap.setData(data.vwap||[]);
+    lwVol.setData(data.candles.map(c=>({time:c.time,value:c.volume,color:c.close>=c.open?'rgba(63,185,80,0.3)':'rgba(248,81,73,0.3)'})));
+    if (Array.isArray(trades)&&trades.length) {
+      const markers=[];
+      for (const t of trades) {
+        const clean=(t.datetime||'').replace(' KST','').trim();
+        const d=new Date(clean+'+09:00'); if(isNaN(d)) continue;
+        const ts=Math.floor(d.getTime()/1000);
+        const isBuy=(t.action||'').includes('BUY');
+        markers.push({time:ts,position:isBuy?'belowBar':'aboveBar',color:isBuy?'#3fb950':'#f85149',shape:isBuy?'arrowUp':'arrowDown',text:isBuy?'B':'S'});
+      }
+      markers.sort((a,b)=>a.time-b.time);
+      lwCandles.setMarkers(markers);
+    }
+    lwChart.timeScale().fitContent();
+  } catch(e) { console.error('chart error',e); }
+}
+
+async function loadData() {
+  try {
+    const [st, confirmed, eq] = await Promise.all([
+      fetch('/api/status').then(r=>r.json()),
+      fetch('/api/confirmed_trades').then(r=>r.json()).catch(()=>[]),
+      fetch('/api/equity_history').then(r=>r.json()).catch(()=>[]),
+    ]);
+
+    // ── Extract all live values first ──
+    const ie = st.initial_equity||0;
+    const mdd = st.current_mdd||0;
+    const inPos = st.in_position;
+    const regime = st.last_regime||'-';
+    const xgb = st.live_xgb||((st.ai_prob_history||[]).slice(-1)[0]||0);
+    const score = st.prev_score||0;
+    const curPrice = st.live_price||st.prev_price||0;
+    const curEquity = st.live_equity||ie;
+    const liveRsi = st.live_rsi||st.prev_rsi||0;
+    const liveAdx = st.live_adx||st.prev_adx||0;
+    const liveTs = st.live_ts||0;
+    const liveEmaOk = st.live_ema_ok;
+    const liveEmaGap = st.live_ema_gap||0;
+    const liveVwap = st.live_vwap||0;
+    const liveVwapOk = st.live_vwap_ok;
+    const liveObvOk = st.live_obv_ok; // kept for backward compat
+    const liveO3 = st.live_o3;
+    const atrPct = st.live_atr_pct||st.prev_atr_pct||0;
+    const atrRegime = st.live_atr_regime||'';
+    const th = st._thresholds||{};
+    const prec = st.ai_precision||0, pf = st.ai_profit_factor||0;
+    // v20.9.11 #79: holdout PF + OOS 100봉 PF 분리 (AR3는 OOS 사용)
+    const pfHoldout = st.ai_pf_holdout||0;
+    const pfOos     = st.ai_pf_oos_100||0;
+    // v20.9.5: 실거래 PF (calc_recent_stats 기반)
+    const livePf     = st.live_real_pf||0;
+    const livePfN    = st.live_real_pf_n||0;
+    const penaltyOn  = !!st.live_real_penalty_active;
+    const dynTh = st.dynamic_threshold||0;
+    const candles = st.candles_since_retrain||0;
+    const xgbTh = th.xgb_abs||0.58;
+    const scoreTh = liveAdx<22?(th.score_low||2.5):(th.score_high||2.8);
+    const scoreMax = th.score_max||6.3;
+    let cumPnl = 0;
+    if (Array.isArray(eq)&&eq.length) cumPnl = eq[eq.length-1].cumulative;
+
+    // Header
+    $('#ver').textContent = 'v'+(st.version||'?');
+    $('#ts').textContent = new Date().toLocaleString('ko-KR',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    $('#dot').className = 'dot '+(st.bot_state==='running'?'on':'off');
+
+    // Summary bar
+    let posLabel='대기', posCls='';
+    if (inPos) {
+      const entry=st.entry||0;
+      const unreal=entry>0?((curPrice-entry)/entry*100):0;
+      posLabel=`보유 ${unreal>=0?'+':''}${unreal.toFixed(1)}%`;
+      posCls=unreal>=0?'grn':'red';
+    }
+    const eqPct=ie>0?((curEquity/ie)-1)*100:0;
+    const eqDiff=curEquity-ie;
+    const freshSec=liveTs?Math.round(Date.now()/1000-liveTs):999;
+    const freshTag=freshSec<60?freshSec+'s':freshSec<3600?Math.round(freshSec/60)+'m':'-';
+    $('#summary').innerHTML=`
+      <div class="item"><div class="label">자산</div><div class="value">${fmt(curEquity)}</div></div>
+      <div class="item"><div class="label">수익</div><div class="value ${eqDiff>=0?'grn':'red'}">${eqDiff>=0?'+':''}${fmt(Math.round(eqDiff))} (${eqPct>=0?'+':''}${eqPct.toFixed(1)}%)</div></div>
+      <div class="item"><div class="label">현재가</div><div class="value">${fmt(curPrice)}</div></div>
+      <div class="item"><div class="label">시장</div><div class="value">${regime}</div></div>
+      <div class="item"><div class="label">XGB</div><div class="value">${(xgb*100).toFixed(0)}%</div></div>
+      <div class="item"><div class="label">MDD</div><div class="value ${mdd>0.08?'red':mdd>0.04?'yel':''}">${(mdd*100).toFixed(1)}%</div></div>
+      <div class="item"><div class="label">포지션</div><div class="value ${posCls}">${posLabel}</div></div>
+      <div class="item"><div class="label">갱신</div><div class="value" style="font-size:11px">${freshTag}</div></div>`;
+
+    // ── AI Gate ──
+    const xgbPct=xgb*100;
+    let g='';
+    g+=mrow('XGB 확률',`<span class="${xgbPct>=xgbTh*100?'ok':'ng'}">${xgbPct.toFixed(1)}%</span>${delta('xgb',xgbPct)}`,gauge(xgbPct,0,100,{ok:xgbTh*100,ng:40}),`기준 ${(xgbTh*100).toFixed(0)}%`);
+    g+=mrow('정밀도',`<span class="${prec>=(th.min_precision||0.42)?'ok':'ng'}">${(prec*100).toFixed(1)}%</span>`,gauge(prec*100,0,100,{ok:(th.min_precision||0.42)*100,ng:30}),`기준 ${((th.min_precision||0.42)*100).toFixed(0)}%`);
+    // v20.9.11 #79: PF_AI(OOS, AR3) + holdout 병기
+    g+=mrow('수익팩터 (OOS 100봉, AR3)',`<span class="${pfOos>=(th.min_pf||1)?'ok':'ng'}">${pfOos.toFixed(2)}</span>`,gauge(pfOos,0,3,{ok:th.min_pf||1,ng:0.8}),`기준 ${(th.min_pf||1).toFixed(1)} | #79 라이브 상관 0.98`);
+    g+=mrow('수익팩터 (holdout 참고)',`<span style="opacity:.7">${pfHoldout.toFixed(2)}</span>`,gauge(pfHoldout,0,3,{ok:th.min_pf||1,ng:0.8}),`구 측정 (라이브 상관 -0.10)`);
+    // v20.9.5: 실거래 PF 서브카드 (calc_recent_stats)
+    const livePfSpan = livePfN<5
+      ? `<span class="warn">N/A (n&lt;5)</span>`
+      : `<span class="${livePf>=(th.min_pf||1)?'ok':'ng'}">${livePf.toFixed(2)} <span style="font-size:11px;opacity:.7">(n=${livePfN})</span></span>`;
+    g+=mrow('수익팩터 (실거래)',livePfSpan,gauge(livePf,0,3,{ok:th.min_pf||1,ng:0.8}),`n≥30 시 감점 활성`);
+    const penaltyTxt = livePfN<30
+      ? `<span class="warn">N/A (n&lt;30)</span>`
+      : penaltyOn
+        ? `<span class="ng">적용 (×0.5)</span>`
+        : `<span class="ok">미적용</span>`;
+    g+=mrow('사이징 감점',penaltyTxt,'','PERF_LOW_RISK_MULT');
+    g+=mrow('동적임계',dynTh.toFixed(2),'','');
+    g+=mrow('캔들진행',`${candles}/${th.retrain_candles||30}`,gauge(candles,0,th.retrain_candles||30,{ok:25,ng:0}),`재학습 ${th.retrain_candles||30}`);
+    const aiMode=prec>=(th.min_precision||0.42)&&pf>=(th.min_pf||1)?'<span class="ok">정상</span>':'<span class="warn">보수적</span>';
+    g+=mrow('모드',aiMode,'','');
+    if(st.ai_last_train_dt) g+=mrow('마지막학습',st.ai_last_train_dt.split('T')[0],'','');
+    $('#gate-body').innerHTML='<table class="mtbl">'+g+'</table>';
+
+    // ── Rule Score ──
+    const atrOk=(atrRegime==='적정변동성'||atrRegime==='고변동성');
+    const emaEarned=liveEmaOk?1.2:0;
+    const atrEarned=atrOk?1.0:0;
+    const is1dUp=st.live_1d_up!=null?st.live_1d_up:st.live_adx_bull;
+    const volOk=st.live_vol_ok||false;
+    const brkOk=st.live_brk_ok||false;
+    const rrEarned=st.live_rr_earned||0;
+    const obvOk=st.live_obv_ok||false;
+    // parse extras
+    const volMul=parseFloat((st.live_vol_extra||'x1.0').replace(/^x/i,''))||1;
+    const brkPctVal=parseFloat((st.live_brk_extra||'0').replace('%',''))||0;
+    const rrMatch=(st.live_rr_extra||'1:1.0').match(/1:([\d.]+)/);
+    const rrRatio=rrMatch?parseFloat(rrMatch[1]):1.0;
+
+    // Section header total
+    const scoreTotCls=score>=scoreTh?'ok':score>=scoreTh*0.6?'warn':'ng';
+    $('#score-total').className='total '+scoreTotCls;
+    $('#score-total').innerHTML=`${score.toFixed(1)}<span class="max"> / ${scoreMax.toFixed(1)}</span>`;
+
+    let sc='';
+    // EMA 4H: bi-bar, max ±3%
+    sc+=si('EMA 4H',`갭 ${liveEmaGap>=0?'+':''}${liveEmaGap.toFixed(1)}%`,emaEarned,
+      biBar(liveEmaGap,3),
+      `<span>역배열</span><span class="mid-lbl">0%</span><span>정배열</span>`);
+    // ATR: pct-bar with zone 10-40%
+    sc+=si('ATR',`${atrPct.toFixed(0)}%ile · ${atrRegime}`,atrEarned,
+      pctBar(atrPct,{zone:[10,40,'']}),
+      `<span>0%</span><span class="mid-lbl">적정 10~40</span><span>100%</span>`);
+    // 거래량: center=x1.0, scale 0~3x
+    const volPos=volMul<=1?volMul*50:50+clamp((volMul-1)/2,0,1)*50;
+    const volFillW=Math.abs(volPos-50);
+    const volCls=volMul>=1?'pos':'neg';
+    const volSide=volMul>=1?'left:50%':'right:50%';
+    sc+=si('거래량',`x${volMul.toFixed(1)} (MA20)`,volOk?0.8:0,
+      `<div class="bi-bar"><div class="mid"></div><div class="fill ${volCls}" style="width:${volFillW.toFixed(1)}%;${volSide}"></div><div class="dot" style="left:${volPos.toFixed(1)}%"></div></div>`,
+      `<span>저조</span><span class="mid-lbl">x1.0</span><span>폭발</span>`);
+    // 고점근접: 0~100% 단방향
+    sc+=si('고점근접',`${brkPctVal.toFixed(1)}%`,brkOk?0.8:0,
+      pctBar(brkPctVal,{}),
+      `<span>0%</span><span>100%</span>`);
+    // 1D추세: bi-bar (binary)
+    sc+=si('1D추세',is1dUp?'상승':'하락',is1dUp?0.7:0,
+      biBar(is1dUp?0.7:-0.7,1),
+      `<span>하락</span><span class="mid-lbl">중립</span><span>상승</span>`);
+    // R:R: 0~2, 기준선 1.0 (=50%)
+    const rrPos=clamp(rrRatio/2*100,0,100);
+    sc+=si('R:R',`1:${rrRatio.toFixed(2)} / 기준 1:1`,rrEarned,
+      `<div class="pct-bar"><div class="zone line" style="left:50%;width:1px"></div><div class="fill" style="width:${rrPos.toFixed(1)}%"></div><div class="dot" style="left:${rrPos.toFixed(1)}%"></div></div>`,
+      `<span>0</span><span class="mid-lbl">1:1</span><span>1:2</span>`);
+    // OBV: bi-bar (binary)
+    sc+=si('OBV',obvOk?'매집':'분배',obvOk?0.5:0,
+      biBar(obvOk?0.7:-0.7,1),
+      `<span>분배</span><span class="mid-lbl">중립</span><span>매집</span>`);
+    sc+='<div class="sec-div"></div>';
+    // ADX / RSI plain info
+    sc+=infoRow('ADX',`${liveAdx.toFixed(1)} ${st.live_adx_bull?'↑ 상승':'↓ 하락'}${delta('adx',liveAdx)}`,st.live_adx_bull?'grn':'red');
+    const rsiCls=liveRsi>=70?'red':liveRsi<=30?'grn':'';
+    sc+=infoRow('RSI',`${liveRsi.toFixed(1)}${delta('rsi',liveRsi)}`,rsiCls);
+    $('#score-body').innerHTML=sc;
+
+    // ── 필터 ──
+    let fl='';
+    fl+=mk('EMA 정배열',`${ic(liveEmaOk)} <span class="thresh">갭: ${liveEmaGap>=0?'+':''}${liveEmaGap.toFixed(1)}%</span>`);
+    if(liveVwap>0){
+      const vDiff=(curPrice-liveVwap)/liveVwap*100;
+      const vOk=curPrice>liveVwap;
+      fl+=mrow('VWAP',ic(vOk),vwapBar(curPrice,liveVwap),`${(curPrice/1e6).toFixed(1)}M ${vOk?'>':'<'} ${(liveVwap/1e6).toFixed(1)}M (${vDiff>=0?'+':''}${vDiff.toFixed(2)}%)`);
+    } else { fl+=mk('VWAP','<span class="thresh">미적용</span>'); }
+    fl+=mk('OBV',`${ic(obvOk)} <span class="thresh">${obvOk?'매집':'분배'} <small>(Score 보너스용)</small></span>`);
+    fl+=mk('O3 유동성흡수',liveO3?'<span class="ok">⚡ 발동</span>':'<span class="thresh">없음</span>');
+    const cdRem=Math.max(0,(st.cooldown_seconds||0)-(Date.now()/1000-(st.last_trade_time||0)));
+    fl+=mk('쿨다운',cdRem>0?`<span class="ng">${(cdRem/60).toFixed(0)}분</span>`:'<span class="ok">없음</span>');
+    $('#filter-body').innerHTML='<table class="mtbl">'+fl+'</table>';
+
+    // ── 리스크 ──
+    const ks=st.kill_switch,cl=st.consecutive_losses||0;
+    const mddLimit=(th.mdd_limit||0.15)*100;
+    const mddPct=mdd*100;
+    const mddPos=clamp(mddPct/mddLimit*100,0,100);
+    const mddWarn=mddPct>=mddLimit*0.66;
+    // Daily loss — today's SELL pnl_pct sum (negative only)
+    let dailyLoss=0;
+    try{
+      const todayKst=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Seoul'});
+      if(Array.isArray(confirmed)){
+        for(const t of confirmed){
+          if((t.action||'')==='SELL' && (t.datetime||'').startsWith(todayKst)){
+            const p=parseFloat(t.pnl_pct);
+            if(!isNaN(p)&&p<0) dailyLoss+=Math.abs(p);
+          }
+        }
+      }
+    }catch(e){}
+    const dlLimit=5,dlWarn=dailyLoss>=dlLimit*0.6;
+    const dlPos=clamp(dailyLoss/dlLimit*100,0,100);
+    const clLimit=3,clPos=clamp(cl/clLimit*100,0,100);
+    const cdSec=st.last_trade_time?Math.max(0,(st.cooldown_seconds||0)-(Date.now()/1000-st.last_trade_time)):0;
+    const cdMin=cdSec/60;
+    const cdMax=240;
+    const cdPos=clamp(cdMin/cdMax*100,0,100);
+
+    // Section header total status
+    const riskOk=!ks&&mddPct<mddLimit*0.66&&cl<clLimit&&dailyLoss<dlLimit*0.6;
+    const riskWarn=!ks&&(mddWarn||cl>=2||dlWarn);
+    const riskTotCls=ks?'ng':riskOk?'ok':riskWarn?'warn':'ok';
+    const riskTotTxt=ks?'차단':riskOk?'정상':riskWarn?'주의':'정상';
+    $('#risk-total').className='total '+riskTotCls;
+    $('#risk-total').style.fontSize='13px';
+    $('#risk-total').textContent=riskTotTxt;
+
+    let rr='';
+    // v20.9.2: KRW formatter
+    const krwFmt=v=>Math.round(v).toLocaleString('en-US');
+    // MDD: 0~mddLimit, 경고 66~100% (= 10~15%)
+    // + v20.9.2: 원화 편차 병기
+    const mddKrw=st.live_mdd_krw||0, peakEq=st.live_peak_equity_krw||0, curEq=st.live_current_equity_approx||0;
+    const mddSub=peakEq>0?`<br><span style="color:var(--dim);font-size:10px">peak ${krwFmt(peakEq)} / 현재 ${krwFmt(curEq)} · 낙폭 <span class="red">-${krwFmt(mddKrw)} KRW</span></span>`:'';
+    rr+=si('MDD',`${mddPct.toFixed(1)}% / 한도 ${mddLimit.toFixed(0)}%${mddSub}`,mddWarn?'⚠':'✅',
+      `<div class="pct-bar"><div class="zone warn" style="left:66%;width:34%;border-right:none"></div><div class="fill ${mddWarn?'bad':''}" style="width:${mddPos.toFixed(1)}%"></div><div class="dot" style="left:${mddPos.toFixed(1)}%"></div></div>`,
+      `<span>0%</span><span style="color:var(--red)">한도 ${mddLimit.toFixed(0)}%</span>`);
+    // 일손실: 0~5% + v20.9.2: 한도 도달 시 원화 손실
+    const dlLimitKrw=peakEq>0?peakEq*(dlLimit/100):0;
+    const dlSub=peakEq>0?`<br><span style="color:var(--dim);font-size:10px">한도 도달 시 ≈ <span class="red">-${krwFmt(dlLimitKrw)} KRW</span></span>`:'';
+    rr+=si('일손실',`${dailyLoss.toFixed(1)}% / 한도 ${dlLimit}%${dlSub}`,dlWarn?'⚠':'✅',
+      `<div class="pct-bar"><div class="zone warn" style="left:60%;width:40%;border-right:none"></div><div class="fill ${dlWarn?'bad':''}" style="width:${dlPos.toFixed(1)}%"></div><div class="dot" style="left:${dlPos.toFixed(1)}%"></div></div>`,
+      `<span>0%</span><span style="color:var(--red)">한도 ${dlLimit}%</span>`);
+    // 연속손실: 0~3회
+    rr+=si('연속손실',`${cl}회 / 한도 ${clLimit}회`,cl>=clLimit?'⚠':cl>=2?'⏳':'✅',
+      `<div class="pct-bar"><div class="fill ${cl>=clLimit?'bad':cl>=2?'mid':''}" style="width:${clPos.toFixed(1)}%"></div><div class="dot" style="left:${clPos.toFixed(1)}%"></div></div>`,
+      `<span>0회</span><span style="color:var(--red)">${clLimit}회 차단</span>`);
+    // 쿨다운: 0~240분
+    rr+=si('쿨다운',cdMin>0?`${cdMin.toFixed(0)}분 남음`:'없음',cdMin>0?'⏳':'✅',
+      `<div class="pct-bar"><div class="fill ${cdMin>0?'mid':'dim'}" style="width:${cdPos.toFixed(1)}%"></div>${cdMin>0?`<div class="dot" style="left:${cdPos.toFixed(1)}%"></div>`:''}</div>`,
+      `<span>0분</span><span>${cdMax}분 (손절시)</span>`);
+    // 김프: bi-bar ±5% scale, ±3% 한도 경고 영역
+    if(st.live_kimp!=null){
+      const kp=st.live_kimp, kpAbs=Math.abs(kp), kpMax=5;
+      const kpVal=clamp(kp,-kpMax,kpMax);
+      const kpPos=50+(kpVal/kpMax)*50;
+      const kpFillW=Math.abs(kpVal/kpMax)*50;
+      const kpCls=kp>=0?'pos':'neg';
+      const kpWarn=kpAbs>=3, kpMid=kpAbs>=2;
+      const kpPts=kpWarn?'⚠':(kpMid?'⏳':'✅');
+      const limL=50-(3/kpMax)*50, limR=50+(3/kpMax)*50;
+      const bar=`<div class="bi-bar">`+
+        `<div class="zone warn" style="position:absolute;left:0;top:0;bottom:0;width:${limL}%;background:rgba(248,113,113,0.12);z-index:0"></div>`+
+        `<div class="zone warn" style="position:absolute;left:${limR}%;top:0;bottom:0;right:0;background:rgba(248,113,113,0.12);z-index:0"></div>`+
+        `<div style="position:absolute;left:${limL}%;top:0;bottom:0;width:1px;background:rgba(248,113,113,0.5);z-index:2"></div>`+
+        `<div style="position:absolute;left:${limR}%;top:0;bottom:0;width:1px;background:rgba(248,113,113,0.5);z-index:2"></div>`+
+        `<div class="mid"></div>`+
+        `<div class="fill ${kpCls}" style="width:${kpFillW.toFixed(1)}%"></div>`+
+        `<div class="dot" style="left:${kpPos.toFixed(1)}%"></div>`+
+        `</div>`;
+      // v20.9.2: 김프 원화 편차 근사 (현재가 × kimp%) — 환율 API 없이 계산
+      const kpKrw=st.live_kimp_krw_approx||0;
+      const kpSub=kpKrw!==0?`<br><span style="color:var(--dim);font-size:10px">BTC × 김프% ≈ <span class="${kp>=0?'grn':'red'}">${kp>=0?'+':''}${krwFmt(kpKrw)} KRW</span> (원화 프리미엄 근사)</span>`:'';
+      rr+=si('김프',`${kp>=0?'+':''}${kp.toFixed(2)}% / 한도 ±3%${kpSub}`,kpPts,bar,`-${kpMax}% ← 0 → +${kpMax}%`);
+    } else {
+      rr+=si('김프','조회 실패','❌','<div class="pct-bar"><div class="fill dim" style="width:0%"></div></div>','');
+    }
+    rr+='<div class="sec-div"></div>';
+    // 킬스위치 + PF (v20.8.1 DASH1: 24h 카운트 + 자동복구 시각 표시)
+    const ksLimit=(th.mdd_limit||0.20)*100;
+    const ksRecMdd=th.killswitch_recover_mdd_pct||10;
+    const ksRecHrs=th.killswitch_recover_hours||24;
+    const ksMaxCnt=th.killswitch_max_24h_count||2;
+    const ksCnt=st.killswitch_count_24h||0;
+    const ksAt=st.last_killswitch_at||0;
+    const ksRecAt=st.last_killswitch_recovered_at||0;
+    const fmtKstTs=ts=>{if(!ts)return '-';const d=new Date(ts*1000);return d.toLocaleString('ko-KR',{timeZone:'Asia/Seoul',hour12:false}).replace(/\. /g,'-').replace('.','');};
+    let ksTxt;
+    if(ks){
+      let recLeft='';
+      if(ksAt>0){
+        const elapsed=(Date.now()/1000-ksAt);
+        const remain=ksRecHrs*3600-elapsed;
+        if(remain>0) recLeft=` · 자동복구까지 ${(remain/3600).toFixed(1)}h`;
+        else recLeft=` · 회복 대기중`;
+      }
+      ksTxt=`ON — ${st.kill_switch_reason||''} (한도 ${ksLimit.toFixed(0)}%)${recLeft}`;
+    } else {
+      ksTxt=`OFF (PF ${pf.toFixed(2)} / 기준 ${(th.min_pf||1).toFixed(1)} · MDD 한도 ${ksLimit.toFixed(0)}%)`;
+    }
+    rr+=infoRow('킬스위치',ksTxt,ks?'red':'grn');
+    if(ksCnt>0||ksAt>0){
+      const histTxt=`24h ${ksCnt}회 (영구중단 ${ksMaxCnt}회) · 마지막 ${fmtKstTs(ksAt)}` +
+                    (ksRecAt>0?` · 복구 ${fmtKstTs(ksRecAt)}`:'');
+      const histCls=ksCnt>=ksMaxCnt?'red':ksCnt>=1?'warn':'grn';
+      rr+=infoRow('KS 이력',histTxt,histCls);
+    }
+    // v20.9.0 E2 BEAR 요약 row — 상세는 별도 카드
+    // v20.9.10: e2_enabled_config=false 시 "config OFF" 명시 표시
+    const e2CfgOn=(st.e2_enabled_config!==false); // missing 시 true 가정 (호환)
+    const e2On=st.live_e2_bear_mode||false;
+    const e2Reason=st.live_e2_block_reason||'NONE';
+    const e2Blocks=st.live_e2_blocks_today||0;
+    const e2Gap=st.live_daily_ema200_gap_pct||0;
+    if(!e2CfgOn){
+      rr+=infoRow('E2 BEAR',`⚠️ OFF (v${st.version||'?'} 데이터 누적 모드) · gap ${e2Gap.toFixed(1)}% (참고)`,'warn');
+    } else if(e2On){
+      rr+=infoRow('E2 BEAR',`🐻 ON (${e2Reason}) · gap ${e2Gap.toFixed(1)}% · 차단 ${e2Blocks}건`,'red');
+    } else {
+      rr+=infoRow('E2 BEAR',`✅ OFF (대기 중) · gap ${e2Gap.toFixed(1)}%`,'grn');
+    }
+    // VWAP
+    if(liveVwap>0){
+      rr+=infoRow('VWAP',`${(curPrice/1e6).toFixed(1)}M ${liveVwapOk?'>':'<'} ${(liveVwap/1e6).toFixed(1)}M ${liveVwapOk?'✅':'⚠'}`,liveVwapOk?'grn':'red');
+    } else {
+      rr+=infoRow('VWAP','미적용','');
+    }
+    // OBV 다이버전스 — 봇 미추적, 기본 '없음'
+    const obvDiv=st.live_obv_divergence||false;
+    rr+=infoRow('OBV 다이버',obvDiv?'있음 ⚠':'없음 ✅',obvDiv?'red':'grn');
+    rr+=infoRow('봇상태',st.bot_state||'-',st.bot_state==='running'?'grn':'red');
+    $('#risk-body').innerHTML=rr;
+
+    // ── E2 BEAR Mode 상세 카드 (v20.9.2 — 편차 % 바 + 원화/값 병기) ──
+    // v20.9.10: e2_enabled_config=false 시 상단 banner 추가, 기존 표시 정보 유지 (참고용)
+    {
+      const ee=st;
+      const cfgOn=(ee.e2_enabled_config!==false);
+      const on=ee.live_e2_bear_mode||false;
+      const reason=ee.live_e2_block_reason||'NONE';
+      const f2=ee.live_e2_f2_active||false;
+      const f5=ee.live_e2_f5_active||false;
+      const dClose=ee.live_daily_close||0;
+      const dEma=ee.live_daily_ema200||0;
+      const dGapKrw=ee.live_daily_ema200_gap_krw||(dClose-dEma);
+      const gap=ee.live_daily_ema200_gap_pct||0;
+      const ema21=ee.live_ema21_4h||0;
+      const ema55=ee.live_ema55_4h||0;
+      const ema4hGap=ee.live_ema_4h_gap_pct||(ema55>0?((ema21-ema55)/ema55*100):0);
+      const ema4hGapKrw=ee.live_ema_4h_gap_krw||(ema21-ema55);
+      const bars=ee.bars_since_e2||0;
+      const rs=ee.live_score||0;
+      const actDt=ee.live_e2_activation_date||'-';
+      const th=ee._thresholds||{};
+      const reqBars=th.e2_require_bars||1080;
+      const gapTh=th.e2_gap_threshold||-10.0;
+      const scoreTh=th.e2_score_threshold||4.0;
+      const barsRem=ee.live_bars_remaining||(reqBars-bars);
+      const blocks=ee.live_e2_blocks_today||0;
+      const o3Exc=ee.live_e2_o3_exceptions_today||0;
+      const gapExc=ee.live_e2_gap_exceptions_today||0;
+      const o3Ready=(ee.live_o3||false);
+
+      // Top badge — v20.9.10: config-OFF 시 OFF banner
+      if(!cfgOn){
+        $('#e2-total').textContent = `⚠️ OFF (v${ee.version||'?'})`;
+        $('#e2-total').className = 'total warn';
+      } else {
+        $('#e2-total').textContent = on ? `🐻 ON (${reason})` : '✅ OFF';
+        $('#e2-total').className = 'total ' + (on?'ng':'ok');
+      }
+
+      // v20.9.3: 기존 biBar/pctBar 재사용 (김프/MDD 바와 일관성)
+      //   biBar:  중앙 기준 양방향 편차 바 (F2/F5/gap 편차형)
+      //   pctBar: 0에서 현재값까지 진행률 바 (bars/score 진행형)
+
+      // Helper: KRW formatter — 113,069,000
+      function krwFmt(v){ return Math.round(v).toLocaleString('en-US'); }
+      // Helper: M-scale short
+      function mFmt(v){ return (v/1e6).toFixed(2)+'M'; }
+
+      let eb='';
+
+      // v20.9.10: config-OFF — 간단 banner + EMA 비교 + 롤백 트리거만 표시. 기존 차단 조건/예외/진입 판정/경과 섹션 모두 숨김
+      if(!cfgOn){
+        eb+=`<div style="background:#3a2618;border:1px solid #f59e0b;border-radius:6px;padding:12px;margin-bottom:8px">`;
+        eb+=`<div style="color:#f59e0b;font-weight:700;font-size:13px;margin-bottom:6px">⚠️ E2 OFF (v${ee.version||'?'} — 데이터 누적 모드)</div>`;
+        eb+=`<div style="color:#bbb;font-size:11px;line-height:1.5">실로그 분석 (#74) 기반. 차단 평가 비활성.</div>`;
+        eb+=`</div>`;
+        eb+=`<div style="color:var(--blue);font-size:11px;font-weight:600;margin:8px 0 4px">참고용 EMA 비교 (일봉)</div>`;
+        eb+=`<div id="e2-multi-ema" style="font-size:12px;line-height:1.7;color:#ccc">로딩...</div>`;
+        eb+=`<div style="color:var(--blue);font-size:11px;font-weight:600;margin:10px 0 4px">롤백 조건</div>`;
+        eb+=`<div style="font-size:12px;line-height:1.7;color:#ccc">`;
+        eb+=`  • 일손실 -3%<br>`;
+        eb+=`  • 누적 -5%<br>`;
+        eb+=`  • BTC -10% in 1주`;
+        eb+=`</div>`;
+        $('#e2-body').innerHTML=eb;
+        // 비동기 EMA 비교 채우기 (fetch 안에 return 은 콜백 한정 — loadData() 영향 없음)
+        fetch('/api/multi_ema_d').then(r=>r.json()).then(d=>{
+          if(!d || d.error){ $('#e2-multi-ema').innerHTML='<span style="color:#888">조회 실패</span>'; return; }
+          let h='';
+          for(const p of [100,150,200,250,300]){
+            const ev=d.emas[p]; const gp=d.gaps[p];
+            if(ev==null){ h+=`  EMA${p}: -<br>`; continue; }
+            const dot = (gp<0?'🔴':'🟢');
+            h+=`  ${dot} EMA${p}: <b>${(ev/1e6).toFixed(2)}M</b> (gap <span class="${gp<0?'red':'grn'}">${gp>=0?'+':''}${gp.toFixed(2)}%</span>)<br>`;
+          }
+          $('#e2-multi-ema').innerHTML=h;
+        }).catch(e=>{ $('#e2-multi-ema').innerHTML='<span style="color:#888">조회 실패</span>'; });
+      } else {
+      // ─────────────────────────────────────
+      // Section 1: 차단 조건 (v20.9.8: F2 단독, F5 제거) — cfgOn=True 만 도달
+      // ─────────────────────────────────────
+      eb+=`<div style="color:var(--blue);font-size:11px;font-weight:600;margin:4px 0 4px">차단 조건 (F2 — 일봉 EMA200)</div>`;
+
+      // F2 일봉 bar — biBar 사용 (±15% 범위, 중앙=EMA200)
+      // gap < 0 → neg fill (왼쪽 빨강), gap > 0 → pos fill (오른쪽 녹색)
+      eb+=`<div style="margin-bottom:10px">`;
+      eb+=`<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px">`;
+      eb+=`<span>F2 일봉 <span class="${f2?'red':'grn'}">${f2?'🔴 ON':'🟢 OFF'}</span></span>`;
+      eb+=`<span class="${gap<0?'red':'grn'}" style="font-weight:600">${gap>=0?'+':''}${gap.toFixed(2)}%</span>`;
+      eb+=`</div>`;
+      eb+=biBar(gap, 15);
+      eb+=`<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--dim);margin-top:2px">`;
+      eb+=`<span>-15%</span><span>0% (EMA200)</span><span>+15%</span>`;
+      eb+=`</div>`;
+      eb+=`<div style="font-size:10px;color:var(--dim);margin-top:3px">`;
+      eb+=`일봉 <b class="${f2?'red':''}">${krwFmt(dClose)}</b> / EMA200 <b>${krwFmt(dEma)}</b> · 편차 <b class="${gap<0?'red':'grn'}">${gap>=0?'+':''}${krwFmt(dGapKrw)} KRW</b>`;
+      eb+=`</div>`;
+      eb+=`</div>`;
+
+      // v20.9.8: F5 4H EMA 바 제거 (AY 채택, backtest #52)
+
+      eb+=`<div style="font-size:11px;text-align:right;padding:4px 0;border-top:1px solid var(--bdr);color:var(--dim)">F2 (일봉 EMA200) → ${on?'<span class="red"><b>🔴 차단 중</b></span>':'<span class="grn"><b>🟢 해제</b></span>'}</div>`;
+
+      // ─────────────────────────────────────
+      // Section 2: 예외 조건 (OR 중 하나 충족 시 40% 진입)
+      // ─────────────────────────────────────
+      eb+=`<div style="color:var(--blue);font-size:11px;font-weight:600;margin:10px 0 4px">예외 (OR 중 하나 충족 시 40% 진입 허용)</div>`;
+
+      // O3 binary badge
+      eb+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dashed var(--bdr);font-size:11px">`;
+      eb+=`<span>O3 유동성 흡수</span>`;
+      eb+=`<span class="${o3Ready?'grn':'red'}" style="font-weight:600">${o3Ready?'🟢 발동':'🔴 미발동'}</span>`;
+      eb+=`</div>`;
+      eb+=`<div style="font-size:10px;color:var(--dim);margin-top:2px;margin-bottom:8px">최근 20봉 저점 sweep 후 0.5% 회복 패턴 · ${o3Ready?'즉시 40% 진입 가능':'패턴 대기'}</div>`;
+
+      // gap 완화 (AND 3조건)
+      const barsOk=bars>=reqBars, gapOk=gap<=gapTh, scoreOk=rs>scoreTh;
+      const gapOverallOk=barsOk&&gapOk&&scoreOk;
+      eb+=`<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;margin-bottom:4px">`;
+      eb+=`<span>└─ gap 완화 (AND 3조건)</span>`;
+      eb+=`<span class="${gapOverallOk?'grn':'red'}" style="font-weight:600">${gapOverallOk?'🟢 활성':'🔴 차단'}</span>`;
+      eb+=`</div>`;
+
+      // bars bar — pctBar (0→1080 진행률, 0~100%)
+      eb+=`<div style="margin-left:12px;margin-bottom:8px">`;
+      eb+=`<div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:4px">`;
+      eb+=`<span>${barsOk?'🟢':'🔴'} bars</span>`;
+      eb+=`<span class="${barsOk?'grn':'red'}">${bars}/${reqBars}</span>`;
+      eb+=`</div>`;
+      // 1080이 100% 지점. pctBar는 0~100% 스케일.
+      const barsPctScale = Math.min(100, (bars / reqBars) * 100);
+      eb+=pctBar(barsPctScale, {fillCls: barsOk ? '' : 'bad'});
+      eb+=`<div style="font-size:10px;color:var(--dim);margin-top:3px">현재 ${bars}봉 (Day ${(bars/6).toFixed(1)}) · 목표 ${reqBars}봉 (Day 180) · 남음 <b>${barsRem}봉 (Day ${(barsRem/6).toFixed(1)})</b></div>`;
+      eb+=`</div>`;
+
+      // gap bar — biBar with shifted center (기준선 -10% = 중앙)
+      // 부호 반전: gap<-10 (exception 활성) → 녹색 우측, gap>-10 (미달) → 빨강 좌측
+      // biBar(-(gap - (-10)), 5) = biBar(-(gap+10), 5)
+      //   gap=-9.57: value = -(-9.57+10) = -0.43 → neg (left 빨강) — 미달 ✓
+      //   gap=-15:   value = -(-15+10)   = +5   → pos (right 녹색) — 활성 ✓
+      eb+=`<div style="margin-left:12px;margin-bottom:8px">`;
+      eb+=`<div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:4px">`;
+      eb+=`<span>${gapOk?'🟢':'🔴'} gap</span>`;
+      eb+=`<span class="${gapOk?'grn':'red'}">${gap.toFixed(2)}%</span>`;
+      eb+=`</div>`;
+      eb+=biBar(-(gap - gapTh), 5);   // 중앙 = -10% (gapTh), 좌측 = 미달, 우측 = 활성
+      eb+=`<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--dim);margin-top:2px">`;
+      eb+=`<span>미달 ←</span><span>경계 ${gapTh}%</span><span>→ 활성</span>`;
+      eb+=`</div>`;
+      const shortfall=gap-gapTh;
+      const krwDown=dEma*(gapTh/100-gap/100);
+      eb+=`<div style="font-size:10px;color:var(--dim);margin-top:3px">현재 <b class="red">${gap.toFixed(2)}%</b> · 경계 ${gapTh}% · ${gapOk?'<span class="grn">통과</span>':`부족 <b>${shortfall.toFixed(2)}%p</b> (일봉 약 ${krwFmt(krwDown)} KRW 추가 하락 필요)`}</div>`;
+      eb+=`</div>`;
+
+      // score bar — pctBar (0→6.3 진행률, 경계선 4.0=63.5% 지점에 line zone)
+      eb+=`<div style="margin-left:12px;margin-bottom:4px">`;
+      eb+=`<div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:4px">`;
+      eb+=`<span>${scoreOk?'🟢':'🔴'} score</span>`;
+      eb+=`<span class="${scoreOk?'grn':'red'}">${rs.toFixed(1)}/6.3</span>`;
+      eb+=`</div>`;
+      const scorePct = Math.min(100, (rs / 6.3) * 100);
+      const scoreThPct = (scoreTh / 6.3) * 100;
+      // zone [pct, pct, 'line'] → 수직 점선 (threshold 경계 표시)
+      eb+=pctBar(scorePct, {zone: [scoreThPct, scoreThPct, 'line'], fillCls: scoreOk ? '' : 'bad'});
+      eb+=`<div style="font-size:10px;color:var(--dim);margin-top:3px">현재 <b>${rs.toFixed(1)}</b> · 경계 ${scoreTh} · ${scoreOk?'<span class="grn">✅ 통과</span>':`<span class="red">❌ 미달 (${(scoreTh-rs).toFixed(1)}점 부족)</span>`}</div>`;
+      eb+=`</div>`;
+
+      eb+=`<div style="font-size:11px;text-align:right;padding:4px 0;border-top:1px solid var(--bdr);color:var(--dim);margin-top:6px">예외 전체 (O3 OR gap완화) → ${(o3Ready||gapOverallOk)?'<span class="grn"><b>🟢 활성</b></span>':'<span class="red"><b>🔴 차단</b></span>'}</div>`;
+
+      // ─────────────────────────────────────
+      // Section 3: 진입 판정 종합
+      // ─────────────────────────────────────
+      const canEnterE2 = !on || o3Ready || gapOverallOk;
+      eb+=`<div style="color:var(--blue);font-size:11px;font-weight:600;margin:10px 0 4px">진입 판정</div>`;
+      eb+=`<div style="font-size:11px;line-height:1.5;padding:4px 6px;background:#0b0f14;border:1px solid var(--bdr);border-radius:4px">`;
+      eb+=`F10 ${on?'<span class="red">🔴</span>':'<span class="grn">🟢</span>'} &nbsp;<b>OR</b>&nbsp; 예외 ${(o3Ready||gapOverallOk)?'<span class="grn">🟢</span>':'<span class="red">🔴</span>'}`;
+      eb+=`<br>→ 현재: <b class="${canEnterE2?'grn':'red'}">${canEnterE2?'🟢 진입 허용':'🔴 진입 차단'}</b>`;
+      eb+=`</div>`;
+
+      // ─────────────────────────────────────
+      // Section 4: 경과 & 카운터
+      // ─────────────────────────────────────
+      eb+=`<div style="color:var(--blue);font-size:11px;font-weight:600;margin:10px 0 4px">경과 & 카운터</div>`;
+      eb+=`<div style="font-size:10px;color:var(--dim);line-height:1.6">`;
+      eb+=`시작: ${actDt}<br>`;
+      eb+=`오늘: 차단 <b>${blocks}건</b> · O3 예외 <b>${o3Exc}건</b> · gap 예외 <b>${gapExc}건</b>`;
+      eb+=`</div>`;
+
+      eb+=`<div style="color:var(--dim);font-size:9px;margin-top:6px;border-top:1px dashed var(--bdr);padding-top:4px">※ v20.9.0 배포(2026-04-21 09:35) 이후부터 bars 카운트. 이전 E2 활성 기간은 반영 안 됨.</div>`;
+
+      $('#e2-body').innerHTML=eb;
+      }  // v20.9.10: end else (cfgOn=true branch)
+    }
+
+    // ── 포지션 ──
+    let ps='';
+    if(inPos){
+      const e=st.entry||0,s=st.stop_loss||0,h=st.highest_price||0,hb=st.hold_bars||0;
+      const avg=st.avg_entry_price||e;
+      ps+=mk('진입가',fmt(e)); if(avg&&avg!==e) ps+=mk('평균매수가',fmt(avg));
+      ps+=mk('손절선',fmt(s),'ng'); ps+=mk('최고가',fmt(h));
+      ps+=mk('보유',hb+'봉 ('+hb*4+'h)');
+      // v20.9.0: E2 예외 진입 뱃지
+      const etype=st.entry_type||'-';
+      const isE2Exc=(etype==='e2_exception');
+      const excType=st.e2_exception_type||'';
+      if(isE2Exc){
+        ps+=mk('유형',`<span class="warn">🔓 E2 예외 (${excType})</span>`);
+      } else {
+        ps+=mk('유형',etype);
+      }
+      if(st.pyramid_locked){
+        ps+=mk('피라미딩','<span class="ng">🔒 LOCKED (E2 예외)</span>');
+      }
+      // v20.8.1 DASH2: 진입 모드 + per-position 파라미터 표시
+      const rangeNew=st.range_new_mode===true;
+      const trailM=parseFloat(st.pos_trail_m||0);
+      const stepLb=parseFloat(st.pos_step_lookback||0);
+      const initR=parseFloat(st.pos_init_ratio||0);
+      ps+=mk('진입모드',rangeNew?'<span class="warn">Range New</span>':'<span class="ok">TU 피라미딩</span>');
+      if(initR>0) ps+=mk('초기사이징',(initR*100).toFixed(0)+'%');
+      if(trailM>0){ ps+=mk('트레일링','ATR×'+trailM.toFixed(1)); }
+      else { ps+=mk('트레일링','OFF (Range)'); }
+      if(stepLb>0) ps+=mk('계단lookback',stepLb.toFixed(1));
+      ps+=mk('피라미딩',st.pyramid_level||0);
+      // v20.4.1: 서버가 계산한 라벨/가격/상태를 그대로 렌더 (pyramid 동적 시프트 포함)
+      // 라벨에 '달성'/'예정' 문자열이 포함되면 배지 중복 방지
+      const tpCell=(done,price,label)=>{
+        const labelHasState=label&&(label.indexOf('달성')>=0||label.indexOf('예정')>=0);
+        const stateStr=done?'<span class="ok">달성</span>':'<span class="thresh">대기</span>';
+        if(!price) return labelHasState?'-':stateStr;
+        const dist=((price-curPrice)/curPrice*100);
+        const distStr=done?'':` <small>(${dist>=0?'+':''}${dist.toFixed(2)}%)</small>`;
+        return labelHasState
+          ? `${fmt(price)}${distStr}`
+          : `${fmt(price)}${distStr} · ${stateStr}`;
+      };
+      const tpCurLabel=st.tp_current_label||'TP1';
+      const tpNxtLabel=st.tp_next_label||'TP2';
+      ps+=mk(tpCurLabel,tpCell(!!st.tp_current_done,st.tp_current_price,tpCurLabel));
+      ps+=mk(tpNxtLabel,tpCell(!!st.tp_next_done,   st.tp_next_price,   tpNxtLabel));
+    } else {
+      ps+=mk('상태','포지션 없음'); ps+=mk('마지막매도',st.last_sell_reason||'-');
+    }
+    $('#pos-body').innerHTML='<table class="mtbl">'+ps+'</table>';
+
+    // ── 매매내역 ──
+    const tradesForTable=(Array.isArray(confirmed)&&confirmed.length)?confirmed:await fetch('/api/trades').then(r=>r.json()).catch(()=>[]);
+    if(Array.isArray(tradesForTable)&&tradesForTable.length){
+      const isC=tradesForTable[0].hasOwnProperty('pnl_pct');
+      const rows=tradesForTable.slice().reverse().slice(0,20);
+      if(isC){
+        $('#tb').innerHTML=rows.map(t=>{const b=(t.action||'').includes('BUY');const p=t.pnl_pct;const ps=p!=null?`<span class="${p>=0?'grn':'red'}">${p>=0?'+':''}${Number(p).toFixed(2)}%</span>`:'-';return `<tr><td>${(t.datetime||'').replace(' KST','')}</td><td class="${b?'buy':'sell'}">${t.action||''}</td><td>${fmt(t.price)}</td><td>${fmt(t.krw)}</td><td>${ps}</td><td>${(t.sell_reason||t.entry_reason||'').substring(0,20)}</td><td>${(t.regime||'').substring(0,8)}</td></tr>`;}).join('');
+      } else {
+        $('#tb').innerHTML=rows.map(t=>{const b=(t.action||'').includes('BUY');const note=t.note||'';let ps='-';const m=note.match(/실질:([+-][\d.]+)%/);if(m){const v=parseFloat(m[1]);ps=`<span class="${v>=0?'grn':'red'}">${v>=0?'+':''}${v.toFixed(2)}%</span>`;}return `<tr><td>${(t.datetime||'').replace(' KST','')}</td><td class="${b?'buy':'sell'}">${t.action||''}</td><td>${fmt(t.price)}</td><td>-</td><td>${ps}</td><td>${note.substring(0,25)}</td><td>-</td></tr>`;}).join('');
+      }
+    }
+
+    // ── 신호로그 ──
+    try{const sigs=await fetch('/api/signals').then(r=>r.json());if(Array.isArray(sigs)){$('#tb-sig').innerHTML=sigs.slice().reverse().map(s=>{const ev=s.event||'';const sig=s.signal||'';const ecls=ev.includes('block')?'warn':ev.includes('SELL')?'sell':'';const scls=sig==='BUY'?'buy':(sig==='SELL'||sig==='BLOCK')?'sell':'';return `<tr><td>${(s.datetime||'').substring(5)}</td><td class="${ecls}">${ev}</td><td>${(parseFloat(s.xgb||0)*100).toFixed(0)}%</td><td>${(parseFloat(s.thresh||0)*100).toFixed(0)}%</td><td class="${scls}">${sig}</td><td>${s.regime||''}</td><td>${parseFloat(s.score||0).toFixed(1)}</td></tr>`;}).join('');}}catch(e){}
+
+    // ── 캔들로그 ──
+    try{const cdls=await fetch('/api/candles').then(r=>r.json());if(Array.isArray(cdls)){$('#tb-cdl').innerHTML=cdls.slice().reverse().slice(0,20).map(c=>{const p4=c.pct_change_4;const p8=c.pct_change_8;const p4s=p4!=null&&!isNaN(p4)?`<span class="${p4>=0?'grn':'red'}">${p4>=0?'+':''}${Number(p4).toFixed(1)}%</span>`:'-';const p8s=p8!=null&&!isNaN(p8)?`<span class="${p8>=0?'grn':'red'}">${p8>=0?'+':''}${Number(p8).toFixed(1)}%</span>`:'-';return `<tr><td>${(c.datetime||'').substring(5)}</td><td>${fmt(c.price)}</td><td class="${c.ema_ok?'ok':'ng'}">${c.ema_ok?'OK':'NG'}</td><td>${(parseFloat(c.xgb_prob||0)*100).toFixed(0)}%</td><td>${parseFloat(c.score||0).toFixed(1)}</td><td class="${c.entered?'buy':''}">${c.entered?'YES':'·'}</td><td>${p4s}</td><td>${p8s}</td></tr>`;}).join('');}}catch(e){}
+
+    // ── v20.8.1 DASH5: AI 재학습 이력 ──
+    try{
+      const rt=await fetch('/api/retrain_history').then(r=>r.json());
+      if(Array.isArray(rt)&&rt.length){
+        $('#tb-retrain').innerHTML=rt.map(r=>{
+          const prePF=parseFloat(r.pre_pf||0),postPF=parseFloat(r.post_pf||0);
+          const dPF=postPF-prePF;
+          const pfCls=dPF>=0?'grn':(dPF<-0.10?'red':'warn');
+          const pfTxt=`${prePF.toFixed(2)}→${postPF.toFixed(2)} <span class="${pfCls}">(${dPF>=0?'+':''}${dPF.toFixed(2)})</span>`;
+          const prePr=parseFloat(r.pre_prec||0)*100,postPr=parseFloat(r.post_prec||0)*100;
+          const acc=String(r.accepted||'').toLowerCase()==='true';
+          const accBadge=acc?'<span class="ok">채택</span>':'<span class="red">거부</span>';
+          const samples=`${r.samples_train||0}/${r.samples_test||0}`;
+          const reject=acc?'-':String(r.reject_reason||'').substring(0,40);
+          return `<tr><td>${(r.timestamp_kst||'').substring(5,16)}</td><td>${(r.trigger_type||'').substring(0,20)}</td><td>${pfTxt}</td><td>${prePr.toFixed(1)}→${postPr.toFixed(1)}%</td><td>${samples}</td><td>${(r.regime||'').substring(0,8)}</td><td>${accBadge}</td><td><small>${reject}</small></td></tr>`;
+        }).join('');
+      } else {
+        $('#tb-retrain').innerHTML='<tr><td colspan="8" style="text-align:center;color:#8b949e">데이터 없음 (재학습 발생 시 누적)</td></tr>';
+      }
+    }catch(e){console.error('retrain hist',e);}
+
+    // ── PnL 차트 (실현 + 미실현) ──
+    if(Array.isArray(eq)&&eq.length){
+      const labels=eq.map(e=>(e.datetime||'').split(' ')[0]);
+      const data=eq.map(e=>e.cumulative);
+      const hasUnreal=eq[eq.length-1].unrealized===true;
+      const lastVal=data[data.length-1];
+      const baseColor=lastVal>=0?'#3fb950':'#f85149';
+      // 마지막 포인트가 미실현이면 선행 구간과 꼬리 구간을 분리해 점선 표현
+      if(pnlChart) pnlChart.destroy();
+      const ds=[{
+        data,
+        borderColor:baseColor,
+        backgroundColor:'transparent',
+        tension:0.3,
+        pointRadius:eq.map(e=>e.unrealized?4:2),
+        pointBackgroundColor:eq.map(e=>e.unrealized?'#f9c74f':baseColor),
+        borderWidth:1.5,
+        segment:{
+          borderDash:ctx=>eq[ctx.p1DataIndex]&&eq[ctx.p1DataIndex].unrealized?[4,3]:undefined,
+          borderColor:ctx=>eq[ctx.p1DataIndex]&&eq[ctx.p1DataIndex].unrealized?'#f9c74f':baseColor,
+        },
+      }];
+      pnlChart=new Chart($('#pnlChart'),{type:'line',data:{labels,datasets:ds},options:{responsive:true,maintainAspectRatio:false,scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:6,font:{size:10}},grid:{color:'#21262d'}},y:{ticks:{color:'#8b949e',callback:v=>Number(v).toFixed(2)+'%',font:{size:10}},grid:{color:'#21262d'}}},plugins:{legend:{display:false}}}});
+      const realizedCum=hasUnreal&&eq.length>=2?eq[eq.length-2].cumulative:(hasUnreal?0:lastVal);
+      const unrealPct=hasUnreal?eq[eq.length-1].pct:0;
+      const totalCls=lastVal>=0?'grn':'red';
+      const totalTxt=hasUnreal
+        ?`실현 ${realizedCum>=0?'+':''}${realizedCum.toFixed(2)}% · 미실현 ${unrealPct>=0?'+':''}${unrealPct.toFixed(2)}% = ${lastVal>=0?'+':''}${lastVal.toFixed(2)}%`
+        :`${lastVal>=0?'+':''}${lastVal.toFixed(2)}%`;
+      $('#pnl-total').className='total '+totalCls;
+      $('#pnl-total').textContent=totalTxt;
+    } else {
+      $('#pnl-total').textContent='데이터 없음';
+    }
+  } catch(e) { console.error('data error',e); }
+}
+
+loadTV(); loadChart(); loadData();
+setInterval(loadData, 30000);
+setInterval(loadChart, 120000);
+</script>
+</body>
+</html>

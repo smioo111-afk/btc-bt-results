@@ -3636,8 +3636,12 @@ class BitcoinBot:
             msg += (f"XGB:{xgb_prob:.1%}{chg(xgb_prob*100,prev_prob*100,0.5)} "
                     f"/ 임계:{rpt_regime_th:.0%}({market_state[:5]}) {mk(gate_pass)}\n")
             # v20.9.5: PF_AI (학습) vs PF_실거래 (calc_recent_stats) 이중 표시
+            # v20.9.11 #79: OOS 100봉 PF (AR3 채택) + holdout PF (참고) 병기
+            _pf_oos = float(getattr(ai_engine, "pf_oos_100", 0.0) or 0.0)
+            _pf_hd  = float(getattr(ai_engine, "pf_holdout", 0.0) or 0.0)
+            _pf_oos_ic = "✅" if _pf_oos >= MIN_PROFIT_FACTOR else "⚠️"
             msg += (f"{pr_ic}Prec:{ai_engine.precision:.1%} "
-                    f"{pf_ic}PF_AI:{ai_engine.profit_factor:.2f} (학습)\n")
+                    f"{_pf_oos_ic}PFAI:{_pf_oos:.2f} (OOS-AR3) | holdout:{_pf_hd:.2f}\n")
             # 실거래 PF + 사이징감점 상태
             _live_n  = stats["trade_count"]
             _live_pf = stats["pf"]
