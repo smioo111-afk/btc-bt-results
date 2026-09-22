@@ -73,3 +73,9 @@ live log 대조 (`bt_93b_live_atr_verify.py`, 2026-04-19~09-23 `[새 캔들]` 94
 2. 회귀: forming 기본 → B1+K4 = 33,070,501 / confirmed → 29,952,352 둘 다 정확 일치 확인.
 3. CLAUDE.md "B0 = production" 수치 갱신, backtest_log 에 베이스라인 교체 공지.
 4. 이후 #93-C(과열장 임계)는 F 세계에서 실행.
+
+### ✅ 전환 완료 (2026-09-23, 승인 후)
+- `precompute_v185(atr_source=)` 기본 `"forming"` / `"confirmed"` 보존 (env `BT_ATR_SOURCE`). 백업 `backtest_v185_optimize.py.bak.pre_93b`.
+- 회귀 `bt_93b_switch_regression.py`: forming **33,070,501 ✅ 정확** / confirmed **29,952,352 ✅ 정확**.
+- backtest_log: 교체 공지 + `═══ F세계 전환 경계선 ═══` + #85-RR/#87/#89/#90/#92 `[C세계]` 라벨 (삭제 없음). CLAUDE.md B0 33.07M 갱신 + KS/사이징 실험 F세계 필수 명시.
+- #93-E(계단TP ATR 출처) 분리 등재. production 무변경 (btc_bot_v290.py md5 d78b5967… 전후 동일).
