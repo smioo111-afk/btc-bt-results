@@ -25,6 +25,19 @@
 
 ---
 
+## 2026-11-08 #93-E: 계단TP interval ATR 출처 정합 (entry_atr → live cur_atr) — 🔴 전환 보류 (#87 K4 vs K0 부호 뒤집힘)
+
+- **구현 (시뮬 전용, opt-in)**: `core/simulator.py` `step_atr_source` cfg / env `BT_STEP_ATR_SOURCE` — `"entry"`(**현 기본**, 진입 ATR 고정) / `"forming"`(production 정합: interval = `ind["atr_forming"][ai]` × 1.5, 봉마다 재계산, B2 손절선 동일 interval). `backtest_pyramiding.precompute` 에 `ind["atr_forming"] = (13·atr[i]+|open[i+1]-close[i]|)/14` 추가. 백업 `*.bak.pre_93e`.
+- **production 대조** (`bt_93e_step_atr_verify.py`, live 로그 B2 시대 25건/binding 21건, Upbit 1분봉 재구성): EXACT 평균 0.028% (수식 검증), **ENTRY(구) 1.29% / 최대 5.76%**, **forming 0.19% / ≤0.5% 86%**. 2026-08-25 Lv8 손절 104,986,408: forming +0.03% / ENTRY -5.75%.
+- **B0 (B1+K4+B2)**: entry **33,070,501** (회귀 ✅ 정확) → forming **24,160,396** / CAGR +22.13% / MDD 27.44% / PF 1.47 / N73 (**Δ -8.91M, CAGR -9.00%p**). S_conf(확정 atr) 23,850,101.
+- **상대비교** (`bt_93e_relative_audit.py`): #85 B1 vs B0 +4.06M→+6.94M ✅ / #92 V1~V3 vs V0 전부 음수 유지 ✅ / #87 K1·K2 ✅ / **#87 K3 +3.71M→-3.70M ❌, K4 +4.28M→-2.21M ❌** (S_conf 도 동일 뒤집힘 → ATR 근사 선택과 무관). S 세계 #87 1위 = K0.
+- **메커니즘**: S 경로에서 K4 가 2025-02-25 롤링 MDD 20.1% 발동 → 2025-05-22 복구(≈86일 정지, 차단 진입 352→993). E 경로는 PF 깜빡임만. K4 이득이 임계 경계의 경로 의존적.
+- **조치**: 지시대로 중단 — 시뮬 기본 entry 유지(B0 불변), CLAUDE.md 베이스라인 미갱신. 회귀 `bt_93e_switch_regression.py` (default/entry 33,070,501 / forming 24,160,396) ✅, `bt_93b_switch_regression.py` ✅. production 무변경.
+- 산출물: `bt_93e_verdict.md` / `bt_93e_key_numbers.md` / `bt_93e_full.md` / `bt_93e_step_atr_verify.md`
+- **후속 (사용자 결정)**: S 세계 전환 여부 + #87 K4 재검증(K0 vs K4, KS 임계 민감도). 범위 외 동일 계열 불일치 → #93-F(트레일링/TP1·TP2 도 `ca`=entry_atr, production `cur_atr`).
+
+---
+
 ## 2026-09-23 #93-B 전환: 시뮬 B0 → F세계 (forming ATR) — ✅ 전환 완료 (회귀 2/2 정확 일치)
 
 - `backtest/backtest_v185_optimize.py` `precompute_v185(df_all, df_daily, atr_source=None)` — 기본 `"forming"` (env `BT_ATR_SOURCE` override), `"confirmed"` 보존. forming 시 Volatile 마스크 + `atr_ok`(Rule Score) 모두 재구성. 백업 `backtest_v185_optimize.py.bak.pre_93b`.
