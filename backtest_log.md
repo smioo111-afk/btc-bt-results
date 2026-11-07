@@ -3,6 +3,12 @@
 > v20.0 시뮬레이터 도입 이후 (#20 ~) + v20.6/v20.7 채택 근거 + E2 연구 (#38 ~ #44).
 > 초기 탐색 (#1 ~ #19) 및 Phase 테스트는 `backtest_log_v1.md` 참조.
 
+> ## ⚠️ 시뮬 베이스라인 교체 공지 (2026-11-08, #93-E → S세계)
+> - **S세계(현행)**: F세계 + 계단TP interval live ATR (`step_atr_source="forming"` 기본). **B0 = 24,160,396 / CAGR +22.13% / MDD 27.44% / PF 1.47 / N73** (B1+K4+B2).
+> - #93-F(트레일링·TP1·TP2 live ATR, ST세계 21,684,035)는 #92 V1/V2 뒤집힘으로 **전환 보류** (`trail_atr_source="entry"` 기본).
+> - **⚠️ S/ST세계에서 #87 K4 vs K0 부호 뒤집힘** → #87-R 재검증 대기. 회귀: `bt_93f_switch_regression.py`.
+> - 아래 `═══ S세계 전환 경계선 (#93-E) ═══` 위 = S세계, 그 아래 = F세계(B0 33,070,501), `═══ F세계 전환 경계선 ═══` 아래 = C세계(B0 29,952,352).
+>
 > ## ⚠️ 시뮬 베이스라인 교체 공지 (2026-09-23, #93-B)
 > - **F세계(현행)**: `precompute_v185(atr_source="forming")` 기본 — production 정합(미완성캔들 ATR, live 99.8% 일치). **B0 = 33,070,501 / CAGR +31.13% / MDD 25.80% / PF 1.63 / N80** (B1+K4+B2).
 > - **C세계(구 베이스라인)**: 확정캔들 ATR. #92 이전 모든 항목의 수치는 C세계 (**B0 = 29,952,352**). 재현: `BT_ATR_SOURCE=confirmed` 또는 `atr_source="confirmed"`.
@@ -25,7 +31,25 @@
 
 ---
 
-## 2026-11-08 #93-E: 계단TP interval ATR 출처 정합 (entry_atr → live cur_atr) — 🔴 전환 보류 (#87 K4 vs K0 부호 뒤집힘)
+## 2026-11-08 #93-F: 트레일링·TP1·TP2 ATR 출처 정합 + #93-E 전환 — 🔴 #93-F 전환 보류 (#92 V1/V2 뒤집힘) / ✅ #93-E 전환 완료
+
+- **#93-E 전환 (사용자 승인)**: `core/simulator.py` `STEP_ATR_SOURCE_DEFAULT="forming"` → **B0 = 24,160,396** (S세계).
+- **#93-F 구현 (opt-in)**: `trail_atr_source` / env `BT_TRAIL_ATR_SOURCE` — forming 시 트레일링 ATR 항(MR/P0/P1/infinite) + TP1/TP2 = `ind["atr_forming"][ai]` (하한 없음), 트레일링 레벨 래칫(`trail_peak`, production `stop_loss=max(stop,trail)` 정합). 기본 `entry`. 백업 `core/simulator.py.bak.pre_93f`.
+- **production 대조** (`bt_93f_trail_atr_verify.py`, `트레일링: X KRW` 86건/binding 84건): EXACT 0.054% (수식 검증) / **ENTRY 0.690%** / **forming 0.142% (≤0.5% 99%)**. 봉 경계 52건 forming 0.076% vs ENTRY 0.830%. TP1/TP2 = 1쌍, 판별력 없음.
+- **B0**: E 33,070,501 → S 24,160,396 → **ST 21,684,035** / CAGR +19.17% / MDD 29.57% / PF 1.46 / N83. ST_conf 23,417,733.
+- **상대비교** (`bt_93f_relative_audit.py`, E 대비): #85 B1 ✅ (+7.02M) / #87 K1·K2 ✅ / #87 K3·K4 ❌ (기보고, ST K4 -2.42M) / **#92 V1 -0.65M→+3.46M ❌, V2 -8.05M→+2.55M ❌ (ST 1위 V1)** — 단 ST_conf 에서는 V1 -0.15M / V2 -2.11M 로 보존 → 비강건 / #92 V3 ✅.
+- 진단 (S→ST): 계단손절 ΣPnL +96.4%→+60.3%, 트레일링 +83.8%→+120.3% (건수 15→22) — live ATR 축소 시 트레일 조여져 계단 진행 전 조기 청산 (예: 2023-11-16 Lv12 +14.7% → Lv1 트레일 -1.7%).
+- **조치**: 신규 뒤집힘 → trail 전환 보류. 회귀 `bt_93f_switch_regression.py` 5/5 ✅ (default 24,160,396 / E 33,070,501 / S 24,160,396 / ST 21,684,035 / C 29,952,352). `bt_93b_switch_regression.py` 는 step·trail entry 고정으로 갱신(✅). production 무변경.
+- **준비(미실행)**: `bt_87R_ks_mdd_sensitivity.py` (K0 vs K4 × MDD 20/22/25/30%), `bt_95_step_entry_atr.py` (계단 ATR forming vs entry × K0/K4).
+- 산출물: `bt_93f_verdict.md` / `bt_93f_key_numbers.md` / `bt_93f_full.md` / `bt_93f_trail_atr_verify.md`
+
+---
+
+═══ S세계 전환 경계선 (#93-E, 2026-11-08) — 위 = S세계 (B0 24,160,396), 아래 = F세계 (B0 33,070,501) ═══
+
+---
+
+## 2026-11-08 #93-E: 계단TP interval ATR 출처 정합 (entry_atr → live cur_atr) — 🔴 1차 보류 (#87 K4 vs K0 부호 뒤집힘) → ✅ 사용자 승인 후 전환 (위 #93-F 항목)
 
 - **구현 (시뮬 전용, opt-in)**: `core/simulator.py` `step_atr_source` cfg / env `BT_STEP_ATR_SOURCE` — `"entry"`(**현 기본**, 진입 ATR 고정) / `"forming"`(production 정합: interval = `ind["atr_forming"][ai]` × 1.5, 봉마다 재계산, B2 손절선 동일 interval). `backtest_pyramiding.precompute` 에 `ind["atr_forming"] = (13·atr[i]+|open[i+1]-close[i]|)/14` 추가. 백업 `*.bak.pre_93e`.
 - **production 대조** (`bt_93e_step_atr_verify.py`, live 로그 B2 시대 25건/binding 21건, Upbit 1분봉 재구성): EXACT 평균 0.028% (수식 검증), **ENTRY(구) 1.29% / 최대 5.76%**, **forming 0.19% / ≤0.5% 86%**. 2026-08-25 Lv8 손절 104,986,408: forming +0.03% / ENTRY -5.75%.
