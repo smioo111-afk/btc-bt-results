@@ -24,3 +24,10 @@
 - [x] 기록: bt_99_parity_full.md / backtest_log.md #99 / improvement_todo.md #V26_AUDIT / CLAUDE.md 시뮬 베이스라인
 ## 다음 단계 (사용자 결정 대기)
 - 하위 봉 루프로 봉내 순서 모델링 후 P3/B2/K4 재판정 여부
+- [x] #99-B: core/simulator.py `intrabar_sub` (1시간 하위 봉 순서 재현, 기본 off, 백업 simulator.py.bak.pre_99b_sub) — 회귀 PASS 유지
+- [x] #99-B validate: 새 기준 B 합 +1.02% (실거래 +5.56%), 매칭 건 평균오차 0.67%p, 08-19 +16.22% vs 실 +16.53%
+- [x] #99-B matrix → results/bt_99b_matrix.csv
+- [x] #99-B 독립 검증 완료: 수치 재현, K0>K4 만 전 민감도에서 유지, ST vs P3 는 부호 뒤집힘
+- [x] 기록 완료 (bt_99_parity_full.md / backtest_log.md #99-B / improvement_todo.md / CLAUDE.md)
+## 다음 단계 (사용자 결정 대기)
+- KS PF 트리거 제거 승인 여부 (승인 시: production PF 계산 대조 → 무포지션 확인 → v20.9.27 배포)
